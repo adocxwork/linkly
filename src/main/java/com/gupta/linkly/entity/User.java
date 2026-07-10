@@ -46,6 +46,12 @@ public class User {
     @Column(nullable = false)
     private Boolean isSuspended = false;
 
+    private String upiId;
+
+    @Builder.Default
+    @Column(nullable = false)
+    private Boolean enableUpiPayment = false;
+
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<Link> links = new ArrayList<>();

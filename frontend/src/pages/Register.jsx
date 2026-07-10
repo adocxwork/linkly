@@ -4,14 +4,18 @@ import { motion } from 'framer-motion';
 import api from '../api';
 
 const Register = () => {
-  const [formData, setFormData] = useState({ name: '', username: '', email: '', password: '' });
+  const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [upiId, setUpiId] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
   const handleRegister = async (e) => {
     e.preventDefault();
     try {
-      const { data } = await api.post('/auth/register', formData);
+      const { data } = await api.post('/auth/register', { name, username, email, password, upiId });
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
       navigate('/dashboard');
@@ -35,8 +39,8 @@ const Register = () => {
           <input 
             type="text" 
             className="form-control"
-            value={formData.name}
-            onChange={(e) => setFormData({...formData, name: e.target.value})}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             required 
           />
         </div>
@@ -45,8 +49,8 @@ const Register = () => {
           <input 
             type="text" 
             className="form-control"
-            value={formData.username}
-            onChange={(e) => setFormData({...formData, username: e.target.value})}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
             required 
           />
         </div>
@@ -55,21 +59,33 @@ const Register = () => {
           <input 
             type="email" 
             className="form-control"
-            value={formData.email}
-            onChange={(e) => setFormData({...formData, email: e.target.value})}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             required 
           />
         </div>
-        <div className="form-group">
-          <label className="form-label">Password</label>
-          <input 
-            type="password" 
-            className="form-control"
-            value={formData.password}
-            onChange={(e) => setFormData({...formData, password: e.target.value})}
-            required 
-          />
-        </div>
+          <div className="form-group">
+            <label className="form-label">Password</label>
+            <input 
+              type="password" 
+              className="form-control"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Create a password"
+              required 
+            />
+          </div>
+          
+          <div className="form-group">
+            <label className="form-label">UPI ID (Optional)</label>
+            <input 
+              type="text" 
+              className="form-control"
+              value={upiId}
+              onChange={(e) => setUpiId(e.target.value)}
+              placeholder="e.g. john@upi"
+            />
+          </div>
         <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
           Sign Up
         </button>

@@ -20,4 +20,6 @@ public class UserProfileResponse {
     private String bio;
     private Role role;
     private Boolean isSuspended;
+    private String upiId;
+    private Boolean enableUpiPayment;
 }

@@ -16,4 +16,6 @@ public class PublicProfileResponse {
     private String username;
     private String bio;
     private List<LinkResponse> links;
+    private String upiId;
+    private Boolean enableUpiPayment;
 }

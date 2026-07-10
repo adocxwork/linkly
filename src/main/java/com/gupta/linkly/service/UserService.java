@@ -54,6 +54,8 @@ public class UserService {
                 .username(user.getUsername())
                 .bio(user.getBio())
                 .links(activeLinks)
+                .upiId(user.getUpiId())
+                .enableUpiPayment(user.getEnableUpiPayment())
                 .build();
     }
 
@@ -81,6 +83,12 @@ public class UserService {
         }
         if (request.getBio() != null) {
             user.setBio(request.getBio());
+        }
+        if (request.getUpiId() != null) {
+            user.setUpiId(request.getUpiId());
+        }
+        if (request.getEnableUpiPayment() != null) {
+            user.setEnableUpiPayment(request.getEnableUpiPayment());
         }
         userRepository.save(user);
     }

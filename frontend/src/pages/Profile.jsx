@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import QRCode from 'react-qr-code';
 import api from '../api';
 
 const Profile = () => {
@@ -78,6 +79,24 @@ const Profile = () => {
           <p className="text-secondary">No active links found.</p>
         )}
       </div>
+
+      {profile.enableUpiPayment && profile.upiId && (
+        <div className="mt-8 pt-6 flex-col items-center" style={{ borderTop: '1px solid var(--border-color)' }}>
+          <h3 className="mb-4 text-secondary" style={{ fontSize: '1.1rem' }}>Support me</h3>
+          <div style={{ background: 'white', padding: '16px', borderRadius: 'var(--radius-lg)', display: 'inline-block', marginBottom: '16px' }}>
+            <QRCode value={`upi://pay?pa=${profile.upiId}&pn=${encodeURIComponent(profile.name)}`} size={150} />
+          </div>
+          <div>
+            <a 
+              href={`upi://pay?pa=${profile.upiId}&pn=${encodeURIComponent(profile.name)}`}
+              className="btn btn-secondary"
+              style={{ padding: '8px 16px', fontSize: '0.9rem' }}
+            >
+              Pay via UPI ({profile.upiId})
+            </a>
+          </div>
+        </div>
+      )}
 
       <div className="mt-8 pt-6" style={{ borderTop: '1px solid var(--border-color)', opacity: 0.5 }}>
         <a href="/" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.9rem' }}>

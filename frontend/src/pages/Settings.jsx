@@ -8,6 +8,8 @@ const Settings = () => {
   const [name, setName] = useState(user.name || '');
   const [bio, setBio] = useState(user.bio || '');
   const [email, setEmail] = useState(user.email || '');
+  const [upiId, setUpiId] = useState(user.upiId || '');
+  const [enableUpiPayment, setEnableUpiPayment] = useState(user.enableUpiPayment || false);
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
   const [deleteModal, setDeleteModal] = useState(false);
@@ -16,9 +18,9 @@ const Settings = () => {
   const handleUpdate = async (e) => {
     e.preventDefault();
     try {
-      await api.put('/users/settings', { name, bio, email, password });
+      await api.put('/users/settings', { name, bio, email, password, upiId, enableUpiPayment });
       
-      const updatedUser = { ...user, name, bio, email: email || user.email };
+      const updatedUser = { ...user, name, bio, upiId, enableUpiPayment, email: email || user.email };
       localStorage.setItem('user', JSON.stringify(updatedUser));
       
       setMessage('Settings updated successfully!');
@@ -79,6 +81,31 @@ const Settings = () => {
               placeholder="Leave blank to keep unchanged"
             />
           </div>
+
+          <div className="form-group">
+            <label className="form-label">UPI ID</label>
+            <input 
+              type="text" 
+              className="form-control"
+              value={upiId}
+              onChange={(e) => setUpiId(e.target.value)}
+              placeholder="e.g. yourname@upi"
+            />
+          </div>
+
+          <div className="form-group flex items-center gap-2 mb-4" style={{marginTop: '1rem'}}>
+            <input 
+              type="checkbox" 
+              id="enableUpi"
+              checked={enableUpiPayment}
+              onChange={(e) => setEnableUpiPayment(e.target.checked)}
+              style={{ width: '18px', height: '18px', accentColor: 'var(--accent-color)' }}
+            />
+            <label htmlFor="enableUpi" style={{ margin: 0, fontWeight: 500, cursor: 'pointer' }}>
+              Enable QR for UPI Payment on Profile
+            </label>
+          </div>
+
           <div className="form-group">
             <label className="form-label">New Password</label>
             <input 

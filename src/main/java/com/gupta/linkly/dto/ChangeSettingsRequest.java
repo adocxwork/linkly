@@ -12,4 +12,6 @@ public class ChangeSettingsRequest {
     private String password;
     private String name;
     private String bio;
+    private String upiId;
+    private Boolean enableUpiPayment;
 }

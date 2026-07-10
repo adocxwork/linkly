@@ -37,6 +37,8 @@ public class AuthService {
                 .username(request.getUsername())
                 .email(request.getEmail())
                 .password(passwordEncoder.encode(request.getPassword()))
+                .upiId(request.getUpiId())
+                .enableUpiPayment(false)
                 .build();
 
         userRepository.save(user);
@@ -52,6 +54,8 @@ public class AuthService {
                 .bio(user.getBio())
                 .role(user.getRole())
                 .isSuspended(user.getIsSuspended())
+                .upiId(user.getUpiId())
+                .enableUpiPayment(user.getEnableUpiPayment())
                 .build();
 
         return new AuthResponse(token, userProfile);
@@ -83,6 +87,8 @@ public class AuthService {
                 .bio(user.getBio())
                 .role(user.getRole())
                 .isSuspended(user.getIsSuspended())
+                .upiId(user.getUpiId())
+                .enableUpiPayment(user.getEnableUpiPayment())
                 .build();
 
         return new AuthResponse(token, userProfile);
