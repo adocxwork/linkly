@@ -81,8 +81,8 @@ const Profile = () => {
       </div>
 
       {profile.enableUpiPayment && profile.upiId && (
-        <div className="mt-8 pt-6 flex-col items-center" style={{ borderTop: '1px solid var(--border-color)' }}>
-          <h3 className="mb-4 text-secondary" style={{ fontSize: '1.1rem', marginTop: 0 }}>☕ Buy Me a Coffee</h3>
+        <div className="mt-8 flex-col items-center" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '2rem' }}>
+          <h3 className="mb-6 text-secondary" style={{ fontSize: '1.1rem', marginTop: 0 }}>☕ Buy Me a Coffee</h3>
           <div style={{ background: 'white', padding: '16px', borderRadius: 'var(--radius-lg)', display: 'inline-block', marginBottom: '16px' }}>
             <QRCode value={`upi://pay?pa=${profile.upiId}&pn=${encodeURIComponent(profile.name)}`} size={150} />
           </div>
@@ -98,7 +98,7 @@ const Profile = () => {
         </div>
       )}
 
-      <div className="mt-8 pt-6" style={{ borderTop: '1px solid var(--border-color)', opacity: 0.5 }}>
+      <div className="mt-8" style={{ borderTop: '1px solid var(--border-color)', opacity: 0.5, paddingTop: '2rem' }}>
         <a href="/" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.9rem' }}>
           Powered by <strong>Linkly</strong>
         </a>
