@@ -81,6 +81,8 @@ p { font-size: 1.0625rem; }
   outline: none;
   text-decoration: none;
   gap: 8px;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .btn:disabled {

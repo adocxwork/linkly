@@ -37,6 +37,11 @@ public class UserService {
 
     public PublicProfileResponse getPublicProfile(String username) {
         User user = getUserByUsername(username);
+        
+        if (Boolean.TRUE.equals(user.getIsSuspended())) {
+            throw new ResourceNotFoundException("User profile is suspended");
+        }
+        
         List<LinkResponse> activeLinks = user.getLinks().stream()
                 .filter(link -> Boolean.TRUE.equals(link.getActive()))
                 .sorted(java.util.Comparator.comparing(com.gupta.linkly.entity.Link::getSortOrder)
