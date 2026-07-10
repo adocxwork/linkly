@@ -93,13 +93,15 @@ const Settings = () => {
         </form>
       </div>
 
-      <div className="card glass" style={{ borderColor: 'rgba(255, 59, 48, 0.3)' }}>
-        <h3 className="mb-2 text-danger">Danger Zone</h3>
-        <p className="text-secondary mb-4">Once you delete your account, there is no going back. Please be certain.</p>
-        <button onClick={() => setDeleteModal(true)} className="btn btn-danger">
-          Delete My Account
-        </button>
-      </div>
+      {user.role !== 'ROLE_ADMIN' && (
+        <div className="card glass" style={{ borderColor: 'rgba(255, 59, 48, 0.3)' }}>
+          <h3 className="mb-2 text-danger">Danger Zone</h3>
+          <p className="text-secondary mb-4">Once you delete your account, there is no going back. Please be certain.</p>
+          <button onClick={() => setDeleteModal(true)} className="btn btn-danger">
+            Delete My Account
+          </button>
+        </div>
+      )}
 
       <AnimatePresence>
         {deleteModal && (

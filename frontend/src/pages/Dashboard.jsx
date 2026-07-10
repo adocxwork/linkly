@@ -41,9 +41,9 @@ const Dashboard = () => {
     }
   };
 
-  const toggleLink = async (id, currentStatus) => {
+  const toggleLink = async (id, currentStatus, title, originalUrl) => {
     try {
-      await api.put(`/links/${id}`, { active: !currentStatus });
+      await api.put(`/links/${id}`, { title, originalUrl, active: !currentStatus });
       fetchData();
     } catch (err) {
       console.error(err);
@@ -137,7 +137,7 @@ const Dashboard = () => {
               </button>
               
               <button 
-                onClick={() => toggleLink(link.id, link.active)}
+                onClick={() => toggleLink(link.id, link.active, link.title, link.originalUrl)}
                 className={`btn btn-icon ${link.active ? 'btn-secondary' : 'btn-primary'}`}
                 title={link.active ? 'Disable Link' : 'Enable Link'}
               >

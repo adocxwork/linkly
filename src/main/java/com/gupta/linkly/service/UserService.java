@@ -59,6 +59,9 @@ public class UserService {
 
     public void deleteAccount(String username) {
         User user = getUserByUsername(username);
+        if (user.getRole() == com.gupta.linkly.entity.Role.ROLE_ADMIN) {
+            throw new IllegalArgumentException("Admin account cannot be deleted");
+        }
         userRepository.delete(user);
     }
 
