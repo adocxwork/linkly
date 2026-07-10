@@ -28,4 +28,19 @@ public class UserController {
     ) {
         return ResponseEntity.ok(userService.updateProfile(authentication.getName(), request));
     }
+
+    @PutMapping("/settings")
+    public ResponseEntity<Void> updateSettings(
+            Authentication authentication,
+            @RequestBody com.gupta.linkly.dto.ChangeSettingsRequest request
+    ) {
+        userService.updateSettings(authentication.getName(), request);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/me")
+    public ResponseEntity<Void> deleteAccount(Authentication authentication) {
+        userService.deleteAccount(authentication.getName());
+        return ResponseEntity.noContent().build();
+    }
 }

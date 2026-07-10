@@ -83,7 +83,7 @@ public class LinkService {
         Link link = linkRepository.findByShortUrl(shortUrl)
                 .orElseThrow(() -> new ResourceNotFoundException("Link not found"));
 
-        if (!link.getActive()) {
+        if (Boolean.FALSE.equals(link.getActive()) || Boolean.TRUE.equals(link.getUser().getIsSuspended())) {
             throw new ResourceNotFoundException("Link is inactive");
         }
 

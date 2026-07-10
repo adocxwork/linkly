@@ -20,6 +20,7 @@ import java.util.stream.Collectors;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
 
     public UserProfileResponse getProfile(String username) {
         User user = getUserByUsername(username);
@@ -56,6 +57,48 @@ public class UserService {
                 .build();
     }
 
+    public void deleteAccount(String username) {
+        User user = getUserByUsername(username);
+        userRepository.delete(user);
+    }
+
+    public void updateSettings(String username, com.gupta.linkly.dto.ChangeSettingsRequest request) {
+        User user = getUserByUsername(username);
+        if (request.getEmail() != null && !request.getEmail().isBlank()) {
+            if (!user.getEmail().equals(request.getEmail()) && userRepository.existsByEmail(request.getEmail())) {
+                throw new com.gupta.linkly.exception.DuplicateResourceException("Email is already taken");
+            }
+            user.setEmail(request.getEmail());
+        }
+        if (request.getPassword() != null && !request.getPassword().isBlank()) {
+            user.setPassword(passwordEncoder.encode(request.getPassword()));
+        }
+        userRepository.save(user);
+    }
+
+    public List<UserProfileResponse> getAllUsers() {
+        return userRepository.findAll().stream()
+                .map(this::mapToUserProfileResponse)
+                .collect(Collectors.toList());
+    }
+
+    public void toggleSuspendUser(String username) {
+        User user = getUserByUsername(username);
+        if (user.getRole() == com.gupta.linkly.entity.Role.ROLE_ADMIN) {
+            throw new IllegalArgumentException("Cannot suspend an admin");
+        }
+        user.setIsSuspended(!user.getIsSuspended());
+        userRepository.save(user);
+    }
+
+    public void deleteUserByAdmin(String username) {
+        User user = getUserByUsername(username);
+        if (user.getRole() == com.gupta.linkly.entity.Role.ROLE_ADMIN) {
+            throw new IllegalArgumentException("Cannot delete an admin");
+        }
+        userRepository.delete(user);
+    }
+
     private User getUserByUsername(String username) {
         return userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with username: " + username));
@@ -68,6 +111,8 @@ public class UserService {
                 .username(user.getUsername())
                 .email(user.getEmail())
                 .bio(user.getBio())
+                .role(user.getRole())
+                .isSuspended(user.getIsSuspended())
                 .build();
     }
 }

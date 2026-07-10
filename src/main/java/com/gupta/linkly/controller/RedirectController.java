@@ -19,7 +19,11 @@ public class RedirectController {
 
     @GetMapping("/{shortUrl}")
     public void redirect(@PathVariable String shortUrl, HttpServletResponse response) throws IOException {
-        String originalUrl = linkService.getOriginalUrlAndIncrementClick(shortUrl);
-        response.sendRedirect(originalUrl);
+        try {
+            String originalUrl = linkService.getOriginalUrlAndIncrementClick(shortUrl);
+            response.sendRedirect(originalUrl);
+        } catch (com.gupta.linkly.exception.ResourceNotFoundException ex) {
+            response.sendRedirect("http://localhost:5173/link-error");
+        }
     }
 }

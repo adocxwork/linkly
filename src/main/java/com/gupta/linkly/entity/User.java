@@ -37,6 +37,15 @@ public class User {
 
     private String bio;
 
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    @Column(nullable = false)
+    private Role role = Role.ROLE_USER;
+
+    @Builder.Default
+    @Column(nullable = false)
+    private Boolean isSuspended = false;
+
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<Link> links = new ArrayList<>();
