@@ -20,7 +20,7 @@ const Dashboard = () => {
     try {
       const [linksRes, statsRes] = await Promise.all([
         api.get('/links'),
-        api.get(`/links/dashboard/${user.username}`)
+        api.get('/links/dashboard')
       ]);
       setLinks(linksRes.data);
       setStats(statsRes.data);
