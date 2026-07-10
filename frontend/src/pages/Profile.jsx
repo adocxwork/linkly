@@ -9,6 +9,10 @@ const Profile = () => {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  
+  const [messageName, setMessageName] = useState('');
+  const [messageContent, setMessageContent] = useState('');
+  const [messageSuccess, setMessageSuccess] = useState(false);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -23,6 +27,22 @@ const Profile = () => {
     };
     fetchProfile();
   }, [username]);
+
+  const handleMessageSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post(`/public/u/${username}/messages`, {
+        senderName: messageName || 'Anonymous',
+        content: messageContent
+      });
+      setMessageSuccess(true);
+      setMessageName('');
+      setMessageContent('');
+      setTimeout(() => setMessageSuccess(false), 3000);
+    } catch (err) {
+      alert('Failed to send message.');
+    }
+  };
 
   if (loading) {
     return (
@@ -95,6 +115,40 @@ const Profile = () => {
               Pay via UPI ({profile.upiId})
             </a>
           </div>
+        </div>
+      )}
+
+      {profile.enablePublicMessaging && (
+        <div className="mt-8 flex-col items-center" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '2rem' }}>
+          <h3 className="mb-4 text-secondary" style={{ fontSize: '1.1rem', marginTop: 0 }}>Public Messagings</h3>
+          {messageSuccess ? (
+            <div className="toast success mb-4" style={{ position: 'relative', bottom: 0, transform: 'none', display: 'inline-block' }}>
+              Message sent successfully!
+            </div>
+          ) : (
+            <form onSubmit={handleMessageSubmit} style={{ width: '100%', maxWidth: '400px', margin: '0 auto', textAlign: 'left' }}>
+              <div className="form-group mb-4">
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  placeholder="Your Name (Optional)" 
+                  value={messageName}
+                  onChange={(e) => setMessageName(e.target.value)}
+                />
+              </div>
+              <div className="form-group mb-4">
+                <textarea 
+                  className="form-control" 
+                  placeholder="Leave a message..." 
+                  rows="3" 
+                  value={messageContent}
+                  onChange={(e) => setMessageContent(e.target.value)}
+                  required
+                />
+              </div>
+              <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>Send Message</button>
+            </form>
+          )}
         </div>
       )}
 

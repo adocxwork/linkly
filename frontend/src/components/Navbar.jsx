@@ -33,6 +33,9 @@ const Navbar = () => {
             <Link to={`/p/${user.username}`} target="_blank" className="btn btn-secondary">
               Profile
             </Link>
+            <Link to="/inbox" className="btn btn-secondary">
+              Inbox
+            </Link>
             <Link to="/settings" className="btn btn-icon">
               <Settings size={20} />
             </Link>

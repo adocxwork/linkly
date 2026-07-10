@@ -58,6 +58,7 @@ public class UserService {
                 .links(activeLinks)
                 .upiId(user.getUpiId())
                 .enableUpiPayment(user.getEnableUpiPayment())
+                .enablePublicMessaging(user.getEnablePublicMessaging())
                 .build();
     }
 
@@ -91,6 +92,9 @@ public class UserService {
         }
         if (request.getEnableUpiPayment() != null) {
             user.setEnableUpiPayment(request.getEnableUpiPayment());
+        }
+        if (request.getEnablePublicMessaging() != null) {
+            user.setEnablePublicMessaging(request.getEnablePublicMessaging());
         }
         userRepository.save(user);
     }

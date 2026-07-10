@@ -10,6 +10,7 @@ const Settings = () => {
   const [email, setEmail] = useState(user.email || '');
   const [upiId, setUpiId] = useState(user.upiId || '');
   const [enableUpiPayment, setEnableUpiPayment] = useState(user.enableUpiPayment || false);
+  const [enablePublicMessaging, setEnablePublicMessaging] = useState(user.enablePublicMessaging || false);
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
   const [deleteModal, setDeleteModal] = useState(false);
@@ -18,9 +19,9 @@ const Settings = () => {
   const handleUpdate = async (e) => {
     e.preventDefault();
     try {
-      await api.put('/users/settings', { name, bio, email, password, upiId, enableUpiPayment });
+      await api.put('/users/settings', { name, bio, email, password, upiId, enableUpiPayment, enablePublicMessaging });
       
-      const updatedUser = { ...user, name, bio, upiId, enableUpiPayment, email: email || user.email };
+      const updatedUser = { ...user, name, bio, upiId, enableUpiPayment, enablePublicMessaging, email: email || user.email };
       localStorage.setItem('user', JSON.stringify(updatedUser));
       
       setMessage('Settings updated successfully!');
@@ -103,6 +104,19 @@ const Settings = () => {
             />
             <label htmlFor="enableUpi" style={{ margin: 0, fontWeight: 500, cursor: 'pointer' }}>
               Enable QR for UPI Payment on Profile
+            </label>
+          </div>
+
+          <div className="form-group flex items-center gap-2 mb-6">
+            <input 
+              type="checkbox" 
+              id="enableMessaging"
+              checked={enablePublicMessaging}
+              onChange={(e) => setEnablePublicMessaging(e.target.checked)}
+              style={{ width: '18px', height: '18px', accentColor: 'var(--accent-color)' }}
+            />
+            <label htmlFor="enableMessaging" style={{ margin: 0, fontWeight: 500, cursor: 'pointer' }}>
+              Enable Public Messaging
             </label>
           </div>
 

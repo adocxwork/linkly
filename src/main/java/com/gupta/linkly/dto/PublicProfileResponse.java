@@ -18,4 +18,5 @@ public class PublicProfileResponse {
     private List<LinkResponse> links;
     private String upiId;
     private Boolean enableUpiPayment;
+    private Boolean enablePublicMessaging;
 }

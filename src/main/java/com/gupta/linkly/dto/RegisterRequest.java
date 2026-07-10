@@ -28,4 +28,6 @@ public class RegisterRequest {
     private String password;
 
     private String upiId;
+    private Boolean enableUpiPayment;
+    private Boolean enablePublicMessaging;
 }

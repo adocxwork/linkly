@@ -4,6 +4,7 @@ import com.gupta.linkly.dto.AuthResponse;
 import com.gupta.linkly.dto.LoginRequest;
 import com.gupta.linkly.dto.RegisterRequest;
 import com.gupta.linkly.dto.UserProfileResponse;
+import com.gupta.linkly.entity.Role;
 import com.gupta.linkly.entity.User;
 import com.gupta.linkly.exception.DuplicateResourceException;
 import com.gupta.linkly.repository.UserRepository;
@@ -37,8 +38,10 @@ public class AuthService {
                 .username(request.getUsername())
                 .email(request.getEmail())
                 .password(passwordEncoder.encode(request.getPassword()))
+                .role(Role.ROLE_USER)
                 .upiId(request.getUpiId())
-                .enableUpiPayment(false)
+                .enableUpiPayment(request.getEnableUpiPayment() != null ? request.getEnableUpiPayment() : false)
+                .enablePublicMessaging(request.getEnablePublicMessaging() != null ? request.getEnablePublicMessaging() : false)
                 .build();
 
         userRepository.save(user);
@@ -56,6 +59,7 @@ public class AuthService {
                 .isSuspended(user.getIsSuspended())
                 .upiId(user.getUpiId())
                 .enableUpiPayment(user.getEnableUpiPayment())
+                .enablePublicMessaging(user.getEnablePublicMessaging())
                 .build();
 
         return new AuthResponse(token, userProfile);
@@ -89,6 +93,7 @@ public class AuthService {
                 .isSuspended(user.getIsSuspended())
                 .upiId(user.getUpiId())
                 .enableUpiPayment(user.getEnableUpiPayment())
+                .enablePublicMessaging(user.getEnablePublicMessaging())
                 .build();
 
         return new AuthResponse(token, userProfile);

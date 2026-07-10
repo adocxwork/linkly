@@ -9,13 +9,23 @@ const Register = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [upiId, setUpiId] = useState('');
+  const [enableUpiPayment, setEnableUpiPayment] = useState(false);
+  const [enablePublicMessaging, setEnablePublicMessaging] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
   const handleRegister = async (e) => {
     e.preventDefault();
     try {
-      const { data } = await api.post('/auth/register', { name, username, email, password, upiId });
+      const { data } = await api.post('/auth/register', { 
+        name, 
+        username, 
+        email, 
+        password, 
+        upiId: enableUpiPayment ? upiId : null,
+        enableUpiPayment,
+        enablePublicMessaging
+      });
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
       navigate('/dashboard');
@@ -76,16 +86,45 @@ const Register = () => {
             />
           </div>
           
-          <div className="form-group">
-            <label className="form-label">UPI ID (Optional)</label>
+          <div className="form-group flex items-center gap-2 mb-4">
             <input 
-              type="text" 
-              className="form-control"
-              value={upiId}
-              onChange={(e) => setUpiId(e.target.value)}
-              placeholder="e.g. john@upi"
+              type="checkbox" 
+              id="enablePublicMessaging"
+              checked={enablePublicMessaging}
+              onChange={(e) => setEnablePublicMessaging(e.target.checked)}
+              style={{ width: '16px', height: '16px' }}
             />
+            <label htmlFor="enablePublicMessaging" className="text-secondary" style={{ fontSize: '0.9rem', cursor: 'pointer', margin: 0 }}>
+              Receive public messages on my profile
+            </label>
           </div>
+
+          <div className="form-group flex items-center gap-2 mb-4">
+            <input 
+              type="checkbox" 
+              id="enableUpiPayment"
+              checked={enableUpiPayment}
+              onChange={(e) => setEnableUpiPayment(e.target.checked)}
+              style={{ width: '16px', height: '16px' }}
+            />
+            <label htmlFor="enableUpiPayment" className="text-secondary" style={{ fontSize: '0.9rem', cursor: 'pointer', margin: 0 }}>
+              Display a UPI Payment QR code on my profile
+            </label>
+          </div>
+
+          {enableUpiPayment && (
+            <div className="form-group mb-6">
+              <label className="form-label">UPI ID</label>
+              <input 
+                type="text" 
+                className="form-control"
+                value={upiId}
+                onChange={(e) => setUpiId(e.target.value)}
+                placeholder="e.g. john@upi"
+                required
+              />
+            </div>
+          )}
         <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
           Sign Up
         </button>

@@ -52,9 +52,17 @@ public class User {
     @Column(nullable = false)
     private Boolean enableUpiPayment = false;
 
+    @Builder.Default
+    @Column(name = "enable_public_messaging", nullable = false)
+    private Boolean enablePublicMessaging = false;
+
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<Link> links = new ArrayList<>();
+
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<Message> messages = new ArrayList<>();
 
     @CreationTimestamp
     @Column(updatable = false)

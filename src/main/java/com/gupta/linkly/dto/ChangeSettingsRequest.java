@@ -14,4 +14,5 @@ public class ChangeSettingsRequest {
     private String bio;
     private String upiId;
     private Boolean enableUpiPayment;
+    private Boolean enablePublicMessaging;
 }
