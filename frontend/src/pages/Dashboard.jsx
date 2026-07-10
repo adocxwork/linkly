@@ -119,10 +119,21 @@ const Dashboard = () => {
             style={{ padding: '20px', opacity: link.active ? 1 : 0.6 }}
           >
             <div>
-              <h4 style={{ marginBottom: '4px' }}>{link.title}</h4>
-              <div className="text-secondary" style={{ fontSize: '0.9rem', marginBottom: '8px' }}>{link.originalUrl}</div>
+              <h4 style={{ marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {link.title}
+                {!link.active && (
+                  <span style={{ fontSize: '0.7rem', background: 'var(--danger-color)', color: 'white', padding: '2px 6px', borderRadius: '4px', fontWeight: 'normal' }}>
+                    DISABLED
+                  </span>
+                )}
+              </h4>
+              <div className="text-secondary" style={{ fontSize: '0.9rem', marginBottom: '8px', textDecoration: link.active ? 'none' : 'line-through' }}>
+                {link.originalUrl}
+              </div>
               <div className="flex items-center gap-4">
-                <span style={{ color: 'var(--accent-color)', fontWeight: 500 }}>/r/{link.shortUrl}</span>
+                <span style={{ color: 'var(--accent-color)', fontWeight: 500, textDecoration: link.active ? 'none' : 'line-through' }}>
+                  /r/{link.shortUrl}
+                </span>
                 <span className="text-secondary" style={{ fontSize: '0.85rem' }}>{link.clickCount} clicks</span>
               </div>
             </div>
