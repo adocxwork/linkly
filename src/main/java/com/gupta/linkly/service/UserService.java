@@ -73,6 +73,12 @@ public class UserService {
         if (request.getPassword() != null && !request.getPassword().isBlank()) {
             user.setPassword(passwordEncoder.encode(request.getPassword()));
         }
+        if (request.getName() != null && !request.getName().isBlank()) {
+            user.setName(request.getName());
+        }
+        if (request.getBio() != null) {
+            user.setBio(request.getBio());
+        }
         userRepository.save(user);
     }
 

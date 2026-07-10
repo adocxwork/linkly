@@ -10,4 +10,6 @@ import lombok.NoArgsConstructor;
 public class ChangeSettingsRequest {
     private String email;
     private String password;
+    private String name;
+    private String bio;
 }

@@ -5,6 +5,8 @@ import api from '../api';
 
 const Settings = () => {
   const user = JSON.parse(localStorage.getItem('user'));
+  const [name, setName] = useState(user.name || '');
+  const [bio, setBio] = useState(user.bio || '');
   const [email, setEmail] = useState(user.email || '');
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
@@ -14,9 +16,9 @@ const Settings = () => {
   const handleUpdate = async (e) => {
     e.preventDefault();
     try {
-      await api.put('/users/settings', { email, password });
+      await api.put('/users/settings', { name, bio, email, password });
       
-      const updatedUser = { ...user, email: email || user.email };
+      const updatedUser = { ...user, name, bio, email: email || user.email };
       localStorage.setItem('user', JSON.stringify(updatedUser));
       
       setMessage('Settings updated successfully!');
@@ -47,6 +49,26 @@ const Settings = () => {
       <div className="card glass mb-8">
         <h3 className="mb-4">Update Details</h3>
         <form onSubmit={handleUpdate}>
+          <div className="form-group">
+            <label className="form-label">Name</label>
+            <input 
+              type="text" 
+              className="form-control"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your full name"
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Bio</label>
+            <textarea 
+              className="form-control"
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              placeholder="Tell us about yourself"
+              rows="3"
+            />
+          </div>
           <div className="form-group">
             <label className="form-label">Email Address</label>
             <input 

@@ -50,6 +50,8 @@ public class AuthService {
                 .username(user.getUsername())
                 .email(user.getEmail())
                 .bio(user.getBio())
+                .role(user.getRole())
+                .isSuspended(user.getIsSuspended())
                 .build();
 
         return new AuthResponse(token, userProfile);
@@ -79,6 +81,8 @@ public class AuthService {
                 .username(user.getUsername())
                 .email(user.getEmail())
                 .bio(user.getBio())
+                .role(user.getRole())
+                .isSuspended(user.getIsSuspended())
                 .build();
 
         return new AuthResponse(token, userProfile);
