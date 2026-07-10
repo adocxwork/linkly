@@ -38,6 +38,10 @@ public class Link {
     @Column(nullable = false)
     private Integer clickCount = 0;
 
+    @Builder.Default
+    @Column(nullable = false)
+    private Integer sortOrder = 0;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;

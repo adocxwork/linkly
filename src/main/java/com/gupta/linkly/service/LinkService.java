@@ -42,7 +42,7 @@ public class LinkService {
 
     public List<LinkResponse> getAllLinks(String username) {
         User user = getUserByUsername(username);
-        return linkRepository.findByUserOrderByCreatedAtDesc(user).stream()
+        return linkRepository.findByUserOrderBySortOrderAscCreatedAtDesc(user).stream()
                 .map(this::mapToLinkResponse)
                 .collect(Collectors.toList());
     }
@@ -65,9 +65,25 @@ public class LinkService {
         linkRepository.delete(link);
     }
 
+    @Transactional
+    public void reorderLinks(String username, List<UUID> orderedIds) {
+        User user = getUserByUsername(username);
+        List<Link> userLinks = linkRepository.findByUserOrderBySortOrderAscCreatedAtDesc(user);
+        
+        // Ensure all provided IDs belong to the user
+        for (int i = 0; i < orderedIds.size(); i++) {
+            UUID id = orderedIds.get(i);
+            Link link = userLinks.stream().filter(l -> l.getId().equals(id)).findFirst().orElse(null);
+            if (link != null) {
+                link.setSortOrder(i);
+                linkRepository.save(link);
+            }
+        }
+    }
+
     public DashboardResponse getDashboard(String username) {
         User user = getUserByUsername(username);
-        List<Link> links = linkRepository.findByUserOrderByCreatedAtDesc(user);
+        List<Link> links = linkRepository.findByUserOrderBySortOrderAscCreatedAtDesc(user);
         
         long totalLinks = links.size();
         long totalClicks = links.stream().mapToLong(Link::getClickCount).sum();

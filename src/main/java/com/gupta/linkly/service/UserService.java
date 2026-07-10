@@ -39,6 +39,8 @@ public class UserService {
         User user = getUserByUsername(username);
         List<LinkResponse> activeLinks = user.getLinks().stream()
                 .filter(link -> Boolean.TRUE.equals(link.getActive()))
+                .sorted(java.util.Comparator.comparing(com.gupta.linkly.entity.Link::getSortOrder)
+                        .thenComparing(com.gupta.linkly.entity.Link::getCreatedAt, java.util.Comparator.reverseOrder()))
                 .map(link -> LinkResponse.builder()
                         .id(link.getId())
                         .title(link.getTitle())

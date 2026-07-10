@@ -82,7 +82,7 @@ const Profile = () => {
 
       {profile.enableUpiPayment && profile.upiId && (
         <div className="mt-8 pt-6 flex-col items-center" style={{ borderTop: '1px solid var(--border-color)' }}>
-          <h3 className="mb-4 text-secondary" style={{ fontSize: '1.1rem' }}>Support me</h3>
+          <h3 className="mb-4 text-secondary" style={{ fontSize: '1.1rem', marginTop: 0 }}>☕ Buy Me a Coffee</h3>
           <div style={{ background: 'white', padding: '16px', borderRadius: 'var(--radius-lg)', display: 'inline-block', marginBottom: '16px' }}>
             <QRCode value={`upi://pay?pa=${profile.upiId}&pn=${encodeURIComponent(profile.name)}`} size={150} />
           </div>

@@ -11,7 +11,7 @@ import java.util.UUID;
 
 @Repository
 public interface LinkRepository extends JpaRepository<Link, UUID> {
-    List<Link> findByUserOrderByCreatedAtDesc(User user);
+    List<Link> findByUserOrderBySortOrderAscCreatedAtDesc(User user);
     Optional<Link> findByShortUrl(String shortUrl);
     boolean existsByShortUrl(String shortUrl);
     long countByUser(User user);
