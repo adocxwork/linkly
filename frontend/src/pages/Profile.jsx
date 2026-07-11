@@ -86,7 +86,7 @@ const Profile = () => {
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               key={link.id}
-              href={`http://localhost:8080/r/${link.shortUrl}`}
+              href={`https://linkly-amwf.onrender.com/r/${link.shortUrl}`}
               target="_blank"
               rel="noopener noreferrer"
               className="btn btn-secondary"
