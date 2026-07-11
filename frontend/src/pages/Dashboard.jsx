@@ -62,7 +62,7 @@ const Dashboard = () => {
   };
 
   const copyToClipboard = (shortUrl, id) => {
-    const fullUrl = `http://localhost:8080/r/${shortUrl}`;
+    const fullUrl = `https://linkly-amwf.onrender.com/r/${shortUrl}`;
     navigator.clipboard.writeText(fullUrl);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
