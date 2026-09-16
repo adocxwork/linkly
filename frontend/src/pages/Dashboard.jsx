@@ -77,7 +77,8 @@ const Dashboard = () => {
   };
 
   const copyToClipboard = (shortUrl, id) => {
-    const fullUrl = `${import.meta.env.VITE_BACKEND_URL}/r/${shortUrl}`;
+    const baseUrl = import.meta.env.VITE_BACKEND_URL || window.location.origin;
+    const fullUrl = `${baseUrl}/r/${shortUrl}`;
     navigator.clipboard.writeText(fullUrl);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
