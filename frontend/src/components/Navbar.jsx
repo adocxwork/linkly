@@ -1,14 +1,15 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Link2, LogOut, Settings, LayoutDashboard, Shield } from 'lucide-react';
-
+import api from '../api';
 const Navbar = () => {
   const navigate = useNavigate();
-  const token = localStorage.getItem('token');
   const user = JSON.parse(localStorage.getItem('user') || 'null');
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
+  const handleLogout = async () => {
+    try {
+      await api.post('/auth/logout');
+    } catch (e) {}
     localStorage.removeItem('user');
     navigate('/login');
   };
@@ -20,7 +21,7 @@ const Navbar = () => {
         Linkly
       </Link>
       <div className="nav-links">
-        {token && user ? (
+        {user ? (
           <>
             {user.role === 'ROLE_ADMIN' && (
               <Link to="/admin" className="btn btn-secondary">

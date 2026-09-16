@@ -17,4 +17,7 @@ public class LinkRequest {
     private String originalUrl;
     
     private Boolean active = true;
+    
+    @jakarta.validation.constraints.Pattern(regexp = "^[a-zA-Z0-9-_]*$", message = "Alias can only contain letters, numbers, dashes and underscores")
+    private String customAlias;
 }

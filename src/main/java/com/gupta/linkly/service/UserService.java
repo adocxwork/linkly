@@ -27,6 +27,7 @@ public class UserService {
         return mapToUserProfileResponse(user);
     }
 
+    @org.springframework.cache.annotation.CacheEvict(value = "publicProfiles", key = "#username")
     public UserProfileResponse updateProfile(String username, UpdateProfileRequest request) {
         User user = getUserByUsername(username);
         user.setName(request.getName());
@@ -35,6 +36,7 @@ public class UserService {
         return mapToUserProfileResponse(user);
     }
 
+    @org.springframework.cache.annotation.Cacheable(value = "publicProfiles", key = "#username")
     public PublicProfileResponse getPublicProfile(String username) {
         User user = getUserByUsername(username);
         
@@ -67,6 +69,7 @@ public class UserService {
                 .build();
     }
 
+    @org.springframework.cache.annotation.CacheEvict(value = "publicProfiles", key = "#username")
     public void deleteAccount(String username) {
         User user = getUserByUsername(username);
         if (user.getRole() == com.gupta.linkly.entity.Role.ROLE_ADMIN) {
@@ -75,6 +78,7 @@ public class UserService {
         userRepository.delete(user);
     }
 
+    @org.springframework.cache.annotation.CacheEvict(value = "publicProfiles", key = "#username")
     public void updateSettings(String username, com.gupta.linkly.dto.ChangeSettingsRequest request) {
         User user = getUserByUsername(username);
         if (request.getEmail() != null && !request.getEmail().isBlank()) {
@@ -110,6 +114,7 @@ public class UserService {
                 .collect(Collectors.toList());
     }
 
+    @org.springframework.cache.annotation.CacheEvict(value = "publicProfiles", key = "#username")
     public void toggleSuspendUser(String username) {
         User user = getUserByUsername(username);
         if (user.getRole() == com.gupta.linkly.entity.Role.ROLE_ADMIN) {
@@ -119,6 +124,7 @@ public class UserService {
         userRepository.save(user);
     }
 
+    @org.springframework.cache.annotation.CacheEvict(value = "publicProfiles", key = "#username")
     public void deleteUserByAdmin(String username) {
         User user = getUserByUsername(username);
         if (user.getRole() == com.gupta.linkly.entity.Role.ROLE_ADMIN) {

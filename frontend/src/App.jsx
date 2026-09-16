@@ -11,10 +11,9 @@ import Inbox from './pages/Inbox';
 import ErrorPage from './pages/ErrorPage';
 
 const ProtectedRoute = ({ children, adminOnly = false }) => {
-  const token = localStorage.getItem('token');
   const user = JSON.parse(localStorage.getItem('user') || 'null');
 
-  if (!token || !user) {
+  if (!user) {
     return <Navigate to="/login" />;
   }
 

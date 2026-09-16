@@ -23,14 +23,26 @@ public class LinkService {
     private final LinkRepository linkRepository;
     private final UserRepository userRepository;
     private final UrlShortenerService urlShortenerService;
+    private final AnalyticsService analyticsService;
 
+    @org.springframework.cache.annotation.CacheEvict(value = "publicProfiles", key = "#username")
     public LinkResponse addLink(String username, LinkRequest request) {
         User user = getUserByUsername(username);
+        
+        String shortUrl;
+        if (request.getCustomAlias() != null && !request.getCustomAlias().trim().isEmpty()) {
+            if (linkRepository.findByShortUrl(request.getCustomAlias()).isPresent()) {
+                throw new com.gupta.linkly.exception.DuplicateResourceException("This alias is already taken");
+            }
+            shortUrl = request.getCustomAlias().trim();
+        } else {
+            shortUrl = urlShortenerService.generateShortUrl();
+        }
 
         Link link = Link.builder()
                 .title(request.getTitle())
                 .originalUrl(request.getOriginalUrl())
-                .shortUrl(urlShortenerService.generateShortUrl())
+                .shortUrl(shortUrl)
                 .active(request.getActive() != null ? request.getActive() : true)
                 .clickCount(0)
                 .user(user)
@@ -47,6 +59,7 @@ public class LinkService {
                 .collect(Collectors.toList());
     }
 
+    @org.springframework.cache.annotation.CacheEvict(value = "publicProfiles", key = "#username")
     public LinkResponse updateLink(String username, UUID linkId, LinkRequest request) {
         Link link = getLinkByIdAndUser(linkId, username);
 
@@ -60,12 +73,14 @@ public class LinkService {
         return mapToLinkResponse(link);
     }
 
+    @org.springframework.cache.annotation.CacheEvict(value = "publicProfiles", key = "#username")
     public void deleteLink(String username, UUID linkId) {
         Link link = getLinkByIdAndUser(linkId, username);
         linkRepository.delete(link);
     }
 
     @Transactional
+    @org.springframework.cache.annotation.CacheEvict(value = "publicProfiles", key = "#username")
     public void reorderLinks(String username, List<UUID> orderedIds) {
         User user = getUserByUsername(username);
         List<Link> userLinks = linkRepository.findByUserOrderBySortOrderAscCreatedAtDesc(user);
@@ -103,8 +118,7 @@ public class LinkService {
             throw new ResourceNotFoundException("Link is inactive");
         }
 
-        link.setClickCount(link.getClickCount() + 1);
-        linkRepository.save(link);
+        analyticsService.recordClick(link);
 
         return link.getOriginalUrl();
     }

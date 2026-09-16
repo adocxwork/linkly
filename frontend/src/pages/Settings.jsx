@@ -13,8 +13,14 @@ const Settings = () => {
   const [enablePublicMessaging, setEnablePublicMessaging] = useState(user.enablePublicMessaging || false);
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
   const [deleteModal, setDeleteModal] = useState(false);
   const navigate = useNavigate();
+
+  const showError = (msg) => {
+    setErrorMsg(msg);
+    setTimeout(() => setErrorMsg(''), 4000);
+  };
 
   const handleUpdate = async (e) => {
     e.preventDefault();
@@ -28,7 +34,7 @@ const Settings = () => {
       setPassword('');
       setTimeout(() => setMessage(''), 3000);
     } catch (err) {
-      alert(err.response?.data?.message || 'Error updating settings');
+      showError(err.response?.data?.message || 'Error updating settings');
     }
   };
 
@@ -39,7 +45,7 @@ const Settings = () => {
       localStorage.removeItem('user');
       navigate('/login');
     } catch (err) {
-      alert(err.response?.data?.message || 'Error deleting account');
+      showError(err.response?.data?.message || 'Error deleting account');
     }
   };
 
@@ -48,6 +54,11 @@ const Settings = () => {
       <h1 className="mb-6">Account Settings</h1>
       
       {message && <div className="toast success mb-4 text-center">{message}</div>}
+      {errorMsg && (
+        <div className="toast error mb-4 text-center" style={{ position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 9999 }}>
+          {errorMsg}
+        </div>
+      )}
 
       <div className="card glass mb-8">
         <h3 className="mb-4">Update Details</h3>
@@ -119,6 +130,7 @@ const Settings = () => {
               Enable Public Messaging
             </label>
           </div>
+
 
           <div className="form-group">
             <label className="form-label">New Password</label>

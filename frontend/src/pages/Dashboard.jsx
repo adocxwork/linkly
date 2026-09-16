@@ -2,16 +2,28 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Copy, Check, Trash2, Power, Plus, GripVertical } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import { z } from 'zod';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import api from '../api';
 
+const linkSchema = z.object({
+  title: z.string().min(1, 'Title is required').max(100),
+  originalUrl: z.string().url('Must be a valid URL'),
+  customAlias: z.string().regex(/^[a-zA-Z0-9-_]*$/, 'Letters, numbers, dashes, underscores only').optional().or(z.literal('')),
+});
 const Dashboard = () => {
   const [links, setLinks] = useState([]);
   const [stats, setStats] = useState({ totalLinks: 0, totalClicks: 0 });
-  const [newTitle, setNewTitle] = useState('');
-  const [newUrl, setNewUrl] = useState('');
   const [copiedId, setCopiedId] = useState(null);
   const [deleteModal, setDeleteModal] = useState({ show: false, linkId: null });
-  const user = JSON.parse(localStorage.getItem('user'));
+  const [errorMsg, setErrorMsg] = useState('');
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+
+  const { register, handleSubmit, formState: { errors }, reset } = useForm({
+    resolver: zodResolver(linkSchema),
+    defaultValues: { title: '', originalUrl: '', customAlias: '' }
+  });
 
   useEffect(() => {
     fetchData();
@@ -30,15 +42,18 @@ const Dashboard = () => {
     }
   };
 
-  const handleAddLink = async (e) => {
-    e.preventDefault();
+  const showError = (msg) => {
+    setErrorMsg(msg);
+    setTimeout(() => setErrorMsg(''), 4000);
+  };
+
+  const onSubmit = async (data) => {
     try {
-      await api.post('/links', { title: newTitle, originalUrl: newUrl, active: true });
-      setNewTitle('');
-      setNewUrl('');
+      await api.post('/links', { title: data.title, originalUrl: data.originalUrl, customAlias: data.customAlias, active: true });
+      reset();
       fetchData();
     } catch (err) {
-      alert(err.response?.data?.message || 'Error adding link');
+      showError(err.response?.data?.message || 'Error adding link');
     }
   };
 
@@ -47,7 +62,7 @@ const Dashboard = () => {
       await api.put(`/links/${id}`, { title, originalUrl, active: !currentStatus });
       fetchData();
     } catch (err) {
-      console.error(err);
+      showError(err.response?.data?.message || 'Error updating link');
     }
   };
 
@@ -57,12 +72,12 @@ const Dashboard = () => {
       setDeleteModal({ show: false, linkId: null });
       fetchData();
     } catch (err) {
-      console.error(err);
+      showError(err.response?.data?.message || 'Error deleting link');
     }
   };
 
   const copyToClipboard = (shortUrl, id) => {
-    const fullUrl = `https://linkly-amwf.onrender.com/r/${shortUrl}`;
+    const fullUrl = `${import.meta.env.VITE_BACKEND_URL}/r/${shortUrl}`;
     navigator.clipboard.writeText(fullUrl);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
@@ -87,7 +102,7 @@ const Dashboard = () => {
         linkIds: newLinks.map(l => l.id)
       });
     } catch (err) {
-      console.error('Failed to reorder', err);
+      showError('Failed to reorder');
       fetchData(); // revert on failure
     }
   };
@@ -96,6 +111,12 @@ const Dashboard = () => {
     <div style={{ paddingBottom: '4rem' }}>
       <h1 className="mb-6">Hello, {user.name}</h1>
       
+      {errorMsg && (
+        <div className="toast error mb-4 text-center" style={{ position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 9999 }}>
+          {errorMsg}
+        </div>
+      )}
+
       <div className="flex gap-4 mb-8">
         <div className="card glass" style={{ flex: 1 }}>
           <div className="text-secondary mb-2">Total Links</div>
@@ -109,28 +130,39 @@ const Dashboard = () => {
 
       <div className="card glass mb-8">
         <h3 className="mb-4">Create New Link</h3>
-        <form onSubmit={handleAddLink} className="flex gap-4 items-center">
-          <input 
-            type="text" 
-            placeholder="Title (e.g. My Twitter)" 
-            className="form-control" 
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            required 
-            style={{ flex: 1 }}
-          />
-          <input 
-            type="url" 
-            placeholder="https://example.com" 
-            className="form-control" 
-            value={newUrl}
-            onChange={(e) => setNewUrl(e.target.value)}
-            required 
-            style={{ flex: 2 }}
-          />
-          <button type="submit" className="btn btn-primary" style={{ height: '48px' }}>
-            <Plus size={18} /> Add
-          </button>
+        <form onSubmit={handleSubmit(onSubmit)} className="flex-col gap-4">
+          <div className="flex gap-4 items-start flex-wrap">
+            <div style={{ flex: '1 1 200px' }}>
+              <input 
+                type="text" 
+                placeholder="Title (e.g. My Twitter)" 
+                className="form-control" 
+                {...register('title')}
+              />
+              {errors.title && <p className="text-danger" style={{ fontSize: '0.8rem', marginTop: '4px' }}>{errors.title.message}</p>}
+            </div>
+            <div style={{ flex: '2 1 300px' }}>
+              <input 
+                type="url" 
+                placeholder="https://example.com" 
+                className="form-control" 
+                {...register('originalUrl')}
+              />
+              {errors.originalUrl && <p className="text-danger" style={{ fontSize: '0.8rem', marginTop: '4px' }}>{errors.originalUrl.message}</p>}
+            </div>
+            <div style={{ flex: '1 1 200px' }}>
+              <input 
+                type="text" 
+                placeholder="Custom Alias (optional)" 
+                className="form-control" 
+                {...register('customAlias')}
+              />
+              {errors.customAlias && <p className="text-danger" style={{ fontSize: '0.8rem', marginTop: '4px' }}>{errors.customAlias.message}</p>}
+            </div>
+            <button type="submit" className="btn btn-primary" style={{ height: '48px', flexShrink: 0 }}>
+              <Plus size={18} /> Add
+            </button>
+          </div>
         </form>
       </div>
 

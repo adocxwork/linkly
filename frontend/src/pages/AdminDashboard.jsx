@@ -6,6 +6,7 @@ import api from '../api';
 const AdminDashboard = () => {
   const [users, setUsers] = useState([]);
   const [deleteModal, setDeleteModal] = useState({ show: false, username: null });
+  const [errorMsg, setErrorMsg] = useState('');
   const admin = JSON.parse(localStorage.getItem('user'));
 
   useEffect(() => {
@@ -21,12 +22,17 @@ const AdminDashboard = () => {
     }
   };
 
+  const showError = (msg) => {
+    setErrorMsg(msg);
+    setTimeout(() => setErrorMsg(''), 4000);
+  };
+
   const toggleSuspend = async (username) => {
     try {
       await api.put(`/admin/users/${username}/suspend`);
       fetchUsers();
     } catch (err) {
-      alert(err.response?.data?.message || 'Error suspending user');
+      showError(err.response?.data?.message || 'Error suspending user');
     }
   };
 
@@ -36,12 +42,17 @@ const AdminDashboard = () => {
       setDeleteModal({ show: false, username: null });
       fetchUsers();
     } catch (err) {
-      alert(err.response?.data?.message || 'Error deleting user');
+      showError(err.response?.data?.message || 'Error deleting user');
     }
   };
 
   return (
     <div style={{ paddingBottom: '4rem' }}>
+      {errorMsg && (
+        <div className="toast error mb-4 text-center" style={{ position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 9999 }}>
+          {errorMsg}
+        </div>
+      )}
       <div className="flex items-center gap-2 mb-6">
         <Shield size={32} color="var(--accent-color)" />
         <h1>Admin Control Panel</h1>

@@ -38,7 +38,7 @@ public class CustomUserDetails implements UserDetails {
 
     @Override
     public boolean isAccountNonLocked() {
-        return !user.getIsSuspended();
+        return user.getIsSuspended() == null || !user.getIsSuspended();
     }
 
     @Override
@@ -48,7 +48,7 @@ public class CustomUserDetails implements UserDetails {
 
     @Override
     public boolean isEnabled() {
-        return !user.getIsSuspended();
+        return user.getIsSuspended() == null || !user.getIsSuspended();
     }
 }
 

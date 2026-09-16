@@ -43,7 +43,7 @@ public class User {
     private Role role = Role.ROLE_USER;
 
     @Builder.Default
-    @Column(nullable = false)
+    @Column(name = "is_suspended")
     private Boolean isSuspended = false;
 
     private String upiId;

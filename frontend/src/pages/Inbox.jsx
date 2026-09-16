@@ -6,6 +6,7 @@ import api from '../api';
 const Inbox = () => {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     const fetchMessages = async () => {
@@ -21,12 +22,17 @@ const Inbox = () => {
     fetchMessages();
   }, []);
 
+  const showError = (msg) => {
+    setErrorMsg(msg);
+    setTimeout(() => setErrorMsg(''), 4000);
+  };
+
   const handleDelete = async (id) => {
     try {
       await api.delete(`/messages/${id}`);
       setMessages(messages.filter(msg => msg.id !== id));
     } catch (err) {
-      alert('Failed to delete message');
+      showError('Failed to delete message');
     }
   };
 
@@ -38,6 +44,12 @@ const Inbox = () => {
         <MessageSquare size={32} color="var(--accent-color)" /> Inbox
       </h1>
       
+      {errorMsg && (
+        <div className="toast error mb-4 text-center" style={{ position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 9999 }}>
+          {errorMsg}
+        </div>
+      )}
+
       <div className="flex-col gap-4">
         {messages.map((msg, idx) => (
           <motion.div 
