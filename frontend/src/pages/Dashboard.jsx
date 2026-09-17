@@ -135,7 +135,7 @@ const Dashboard = () => {
         <h3 className="mb-4">Create New Link</h3>
         <form onSubmit={handleSubmit(onSubmit)} className="flex-col gap-4">
           <div className="flex flex-responsive gap-4 items-start flex-wrap">
-            <div style={{ flex: '1 1 200px', width: '100%' }}>
+            <div style={{ flex: '1 1 200px' }}>
               <input 
                 type="text" 
                 placeholder="Title (e.g. My Twitter)" 
@@ -144,7 +144,7 @@ const Dashboard = () => {
               />
               {errors.title && <p className="text-danger" style={{ fontSize: '0.8rem', marginTop: '4px' }}>{errors.title.message}</p>}
             </div>
-            <div style={{ flex: '2 1 300px', width: '100%' }}>
+            <div style={{ flex: '2 1 300px' }}>
               <input 
                 type="url" 
                 placeholder="https://example.com" 
@@ -153,7 +153,7 @@ const Dashboard = () => {
               />
               {errors.originalUrl && <p className="text-danger" style={{ fontSize: '0.8rem', marginTop: '4px' }}>{errors.originalUrl.message}</p>}
             </div>
-            <div style={{ flex: '1 1 200px', width: '100%' }}>
+            <div style={{ flex: '1 1 200px' }}>
               <input 
                 type="text" 
                 placeholder="Custom Alias (optional)" 
@@ -162,7 +162,7 @@ const Dashboard = () => {
               />
               {errors.customAlias && <p className="text-danger" style={{ fontSize: '0.8rem', marginTop: '4px' }}>{errors.customAlias.message}</p>}
             </div>
-            <button type="submit" className="btn btn-primary" style={{ height: '48px', flexShrink: 0, width: '100%' }}>
+            <button type="submit" className="btn btn-primary" style={{ height: '48px', flexShrink: 0 }}>
               <Plus size={18} /> Add
             </button>
           </div>

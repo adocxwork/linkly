@@ -203,13 +203,13 @@ p { font-size: 1.125rem; color: var(--text-secondary); letter-spacing: -0.01em; 
   font-weight: 500;
   letter-spacing: -0.01em;
 }
-.nav-links a {
+.nav-links a:not(.btn) {
   color: var(--text-primary);
   text-decoration: none;
   opacity: 0.8;
   transition: opacity 0.2s;
 }
-.nav-links a:hover {
+.nav-links a:not(.btn):hover {
   opacity: 1;
 }
 
