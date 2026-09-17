@@ -18,12 +18,24 @@ public class RedirectController {
     private final LinkService linkService;
 
     @GetMapping("/{shortUrl}")
-    public void redirect(@PathVariable String shortUrl, HttpServletResponse response) throws IOException {
+    public void redirect(@PathVariable String shortUrl, jakarta.servlet.http.HttpServletRequest request, HttpServletResponse response) throws IOException {
         try {
-            String originalUrl = linkService.getOriginalUrlAndIncrementClick(shortUrl);
+            String ip = request.getHeader("X-Forwarded-For");
+            if (ip == null || ip.isEmpty()) {
+                ip = request.getRemoteAddr();
+            } else {
+                ip = ip.split(",")[0].trim();
+            }
+            String userAgent = request.getHeader("User-Agent");
+            
+            String originalUrl = linkService.getOriginalUrlAndIncrementClick(shortUrl, ip, userAgent);
             response.sendRedirect(originalUrl);
         } catch (com.gupta.linkly.exception.ResourceNotFoundException ex) {
-            response.sendRedirect("http://localhost:5173/link-error");
+            String baseUrl = System.getenv("VITE_BACKEND_URL");
+            if (baseUrl == null || baseUrl.isEmpty()) {
+                baseUrl = "https://linkly-amwf.onrender.com";
+            }
+            response.sendRedirect(baseUrl + "/link-error"); // Will redirect to frontend
         }
     }
 }

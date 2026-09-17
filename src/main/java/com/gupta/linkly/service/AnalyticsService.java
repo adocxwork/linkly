@@ -1,22 +1,89 @@
 package com.gupta.linkly.service;
 
+import com.gupta.linkly.entity.ClickAnalytics;
 import com.gupta.linkly.entity.Link;
+import com.gupta.linkly.repository.ClickAnalyticsRepository;
 import com.gupta.linkly.repository.LinkRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 
+import java.util.Map;
+
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AnalyticsService {
 
     private final LinkRepository linkRepository;
+    private final ClickAnalyticsRepository analyticsRepository;
+    private final RestTemplate restTemplate = new RestTemplate();
 
     @Async
     @Transactional
-    public void recordClick(Link link) {
-        link.setClickCount(link.getClickCount() + 1);
-        linkRepository.save(link);
+    public void recordClick(Link link, String ip, String userAgent) {
+        try {
+            // Increment simple counter
+            link.setClickCount(link.getClickCount() + 1);
+            linkRepository.save(link);
+
+            // Ignore localhost/internal IPs
+            if (ip == null || ip.equals("127.0.0.1") || ip.equals("0:0:0:0:0:0:0:1")) {
+                return;
+            }
+
+            // Parse device and browser
+            String deviceType = "Desktop";
+            if (userAgent != null) {
+                String ua = userAgent.toLowerCase();
+                if (ua.contains("mobile") || ua.contains("android") || ua.contains("iphone")) {
+                    deviceType = "Mobile";
+                } else if (ua.contains("ipad") || ua.contains("tablet")) {
+                    deviceType = "Tablet";
+                }
+            }
+
+            String browser = "Unknown";
+            if (userAgent != null) {
+                String ua = userAgent.toLowerCase();
+                if (ua.contains("edg")) browser = "Edge";
+                else if (ua.contains("chrome")) browser = "Chrome";
+                else if (ua.contains("safari")) browser = "Safari";
+                else if (ua.contains("firefox")) browser = "Firefox";
+            }
+
+            // Fetch Geo Data
+            String country = "Unknown";
+            String city = "Unknown";
+            try {
+                // Free IP API without auth
+                String url = "http://ip-api.com/json/" + ip;
+                Map<String, Object> response = restTemplate.getForObject(url, Map.class);
+                if (response != null && "success".equals(response.get("status"))) {
+                    country = (String) response.get("country");
+                    city = (String) response.get("city");
+                }
+            } catch (Exception e) {
+                log.error("Failed to fetch geo-data for IP {}: {}", ip, e.getMessage());
+            }
+
+            // Save advanced analytics
+            ClickAnalytics analytics = ClickAnalytics.builder()
+                    .link(link)
+                    .ipAddress(ip)
+                    .country(country)
+                    .city(city)
+                    .deviceType(deviceType)
+                    .browser(browser)
+                    .build();
+
+            analyticsRepository.save(analytics);
+
+        } catch (Exception e) {
+            log.error("Failed to record analytics for link {}: {}", link.getId(), e.getMessage());
+        }
     }
 }

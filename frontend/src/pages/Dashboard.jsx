@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Copy, Check, Trash2, Power, Plus, GripVertical } from 'lucide-react';
+import { Copy, Check, Trash2, Power, Plus, GripVertical, BarChart2 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import api from '../api';
+import AnalyticsModal from '../components/AnalyticsModal';
 
 const linkSchema = z.object({
   title: z.string().min(1, 'Title is required').max(100),
@@ -17,6 +18,7 @@ const Dashboard = () => {
   const [stats, setStats] = useState({ totalLinks: 0, totalClicks: 0 });
   const [copiedId, setCopiedId] = useState(null);
   const [deleteModal, setDeleteModal] = useState({ show: false, linkId: null });
+  const [analyticsModal, setAnalyticsModal] = useState({ show: false, link: null });
   const [errorMsg, setErrorMsg] = useState('');
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
@@ -221,6 +223,15 @@ const Dashboard = () => {
                       
                       <div className="flex items-center gap-2">
                         <button 
+                          onClick={() => setAnalyticsModal({ show: true, link })} 
+                          className="btn btn-secondary btn-icon"
+                          title="View Analytics"
+                          style={{ color: 'var(--accent-color)' }}
+                        >
+                          <BarChart2 size={18} />
+                        </button>
+
+                        <button 
                           onClick={() => copyToClipboard(link.shortUrl, link.id)} 
                           className="btn btn-secondary btn-icon"
                           title="Copy Link"
@@ -286,6 +297,13 @@ const Dashboard = () => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {analyticsModal.show && (
+        <AnalyticsModal 
+          link={analyticsModal.link} 
+          onClose={() => setAnalyticsModal({ show: false, link: null })} 
+        />
+      )}
     </div>
   );
 };

@@ -24,6 +24,7 @@ public class LinkService {
     private final UserRepository userRepository;
     private final UrlShortenerService urlShortenerService;
     private final AnalyticsService analyticsService;
+    private final com.gupta.linkly.repository.ClickAnalyticsRepository analyticsRepository;
 
     @org.springframework.cache.annotation.CacheEvict(value = "publicProfiles", key = "#username")
     public LinkResponse addLink(String username, LinkRequest request) {
@@ -110,7 +111,7 @@ public class LinkService {
     }
 
     @Transactional
-    public String getOriginalUrlAndIncrementClick(String shortUrl) {
+    public String getOriginalUrlAndIncrementClick(String shortUrl, String ip, String userAgent) {
         Link link = linkRepository.findByShortUrl(shortUrl)
                 .orElseThrow(() -> new ResourceNotFoundException("Link not found"));
 
@@ -118,9 +119,29 @@ public class LinkService {
             throw new ResourceNotFoundException("Link is inactive");
         }
 
-        analyticsService.recordClick(link);
+        analyticsService.recordClick(link, ip, userAgent);
 
         return link.getOriginalUrl();
+    }
+
+    public com.gupta.linkly.dto.AnalyticsResponse getLinkAnalytics(String username, UUID linkId) {
+        Link link = getLinkByIdAndUser(linkId, username);
+        List<com.gupta.linkly.entity.ClickAnalytics> clicks = analyticsRepository.findByLink(link);
+
+        java.util.Map<String, Long> clicksByCountry = clicks.stream()
+                .collect(Collectors.groupingBy(c -> c.getCountry() != null ? c.getCountry() : "Unknown", Collectors.counting()));
+        
+        java.util.Map<String, Long> clicksByDevice = clicks.stream()
+                .collect(Collectors.groupingBy(c -> c.getDeviceType() != null ? c.getDeviceType() : "Unknown", Collectors.counting()));
+        
+        java.util.Map<String, Long> clicksByBrowser = clicks.stream()
+                .collect(Collectors.groupingBy(c -> c.getBrowser() != null ? c.getBrowser() : "Unknown", Collectors.counting()));
+
+        return com.gupta.linkly.dto.AnalyticsResponse.builder()
+                .clicksByCountry(clicksByCountry)
+                .clicksByDevice(clicksByDevice)
+                .clicksByBrowser(clicksByBrowser)
+                .build();
     }
 
     private User getUserByUsername(String username) {

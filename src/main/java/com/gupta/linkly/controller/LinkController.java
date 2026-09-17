@@ -66,4 +66,12 @@ public class LinkController {
     public ResponseEntity<DashboardResponse> getDashboard(Authentication authentication) {
         return ResponseEntity.ok(linkService.getDashboard(authentication.getName()));
     }
+
+    @GetMapping("/{id}/analytics")
+    public ResponseEntity<com.gupta.linkly.dto.AnalyticsResponse> getLinkAnalytics(
+            Authentication authentication,
+            @PathVariable UUID id
+    ) {
+        return ResponseEntity.ok(linkService.getLinkAnalytics(authentication.getName(), id));
+    }
 }
