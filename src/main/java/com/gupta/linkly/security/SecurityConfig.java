@@ -52,7 +52,7 @@ public class SecurityConfig {
         if (frontendUrl != null && !frontendUrl.isEmpty()) {
             configuration.setAllowedOrigins(java.util.List.of(frontendUrl, "http://localhost:5173"));
         } else {
-            configuration.setAllowedOrigins(java.util.List.of("http://localhost:5173", "https://linkly-amwf.onrender.com"));
+            configuration.setAllowedOriginPatterns(java.util.List.of("*"));
         }
         
         configuration.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
