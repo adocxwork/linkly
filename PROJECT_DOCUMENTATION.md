@@ -1,78 +1,52 @@
-# 📘 Linkly: Technical Project Documentation
+# Linkly: Complete Project Documentation
 
-This document provides a deep dive into the architectural decisions, data flow, and inner workings of the Linkly application. It is intended for developers, engineers, and technical recruiters who wish to understand the "how" and "why" behind the codebase.
+## 1. Project Overview
+**Linkly** is an enterprise-grade Creator Identity Platform designed to handle high-throughput traffic scenarios. It is engineered not just as a functional product, but as a demonstration of advanced system architecture, robust security, and event-driven data streaming.
 
----
+## 2. System Architecture
 
-## 1. System Architecture
+The application is deployed across a distributed micro-architecture:
+- **Frontend Edge Network (Vercel):** Hosts the compiled React SPA. It acts as a Reverse Proxy, rewriting all `/api/*` and `/r/*` requests directly to the backend cluster. This circumvents modern browser restrictions on third-party cookies (Intelligent Tracking Prevention) since all traffic appears as first-party to the browser.
+- **Backend Application Cluster (Render):** A Spring Boot Java application handling business logic, authentication, and database orchestration.
+- **Primary Data Store (Supabase PostgreSQL):** Handles ACID-compliant, persistent storage of Users, Links, and Analytics data.
+- **In-Memory Cache & Message Broker (Upstash Redis):** Serves a dual purpose. It acts as a lightning-fast read cache for public profiles, and as a distributed message queue (Redis Streams) for processing high-volume analytics events asynchronously.
 
-Linkly follows a standard monolithic client-server architecture, cleanly decoupled via a RESTful JSON API.
+## 3. Key Engineering Decisions & Phases
 
-*   **Client Layer:** React SPAs built with Vite.
-*   **API Gateway / Proxy:** Vercel Rewrites (`vercel.json`) acting as a reverse proxy.
-*   **Application Layer:** Spring Boot 3 handling business logic, caching, and security.
-*   **Persistence Layer:** PostgreSQL (Primary Data) + Upstash Redis (Cache).
+### Phase 1 & 2: Core Foundation & Security
+- Implemented **JWT (JSON Web Tokens)** for stateless, scalable authentication.
+- To prevent XSS, tokens are stored strictly in `HttpOnly` cookies rather than `localStorage`.
+- Built a custom Drag-and-Drop link sorting algorithm utilizing `@hello-pangea/dnd` and optimistic UI updates.
 
-### The Reverse Proxy Solution (Vercel -> Render)
-Modern browsers (like Safari and Chrome Incognito) aggressively block third-party cookies. Because the frontend (Vercel) and backend (Render) operate on different domains, the `HttpOnly` JWT cookie would normally be rejected.
-**Solution:** The frontend uses `vercel.json` to proxy all `/api/*` and `/r/*` traffic to the backend. To the browser, the frontend and backend appear to exist on the exact same domain, ensuring seamless cookie transmission without complex CORS preflight issues.
+### Phase 3: High-Performance Caching
+- Public Creator profiles (`/u/{username}`) often face massive viral traffic spikes. Hitting the database for every page load would cause connection exhaustion.
+- Implemented **Spring Data Redis**. Profile GET requests are aggressively cached (`@Cacheable`).
+- Cache invalidation (`@CacheEvict`) is strictly tied to state-mutating actions (adding a link, updating a profile), ensuring users always see the latest data with sub-millisecond read times.
 
----
+### Phase 4: Advanced Geographic & Device Analytics
+- Ingests raw `X-Forwarded-For` and `User-Agent` headers.
+- Pings a lightning-fast IP-Geolocation API to convert raw IPs into actionable Country/City metrics.
+- Parses User-Agents to categorize clicks by Browser (Chrome, Safari, etc.) and Device Type (Mobile, Desktop).
+- Data is visualized using responsive **Recharts** SVGs on the creator dashboard.
 
-## 2. Security & Authentication Flow
+### Phase 5: Event-Driven Analytics (Redis Streams)
+- **The Problem:** Writing to PostgreSQL is slow. If a link goes viral and receives 10,000 clicks per second, synchronously updating the `click_analytics` table would crash the database thread pool.
+- **The Solution:** Implemented an Event-Driven Architecture using **Redis Streams**. 
+- When a user clicks a link, the redirect controller instantly publishes a `ClickEvent` to a Redis Stream and redirects the user (taking < 1ms).
+- A background `AnalyticsStreamConsumer` securely consumes the queue at a safe, controlled speed, processes the geolocation data, and performs the database writes asynchronously, effectively shielding the database from load spikes.
 
-Authentication is strictly stateless, utilizing JSON Web Tokens (JWT).
+### Phase 6: Keep-Alive Infrastructure
+- Render spins down free-tier servers after 15 minutes of inactivity, causing a 50-second "cold start" for the next visitor.
+- Built a `KeepAliveService` with Spring's `@Scheduled` annotation to ping the server's own health endpoint, overriding the idle-timeout mechanism.
+- Governed by a `SystemSettings` table flag, allowing the administrator to toggle the Keep-Alive engine dynamically without redeploying the application.
 
-### Token Lifecycle
-1.  **Login:** The user submits credentials. The `AuthService` hashes the password utilizing `BCrypt` and validates it against the DB.
-2.  **Generation:** `JwtUtil` generates a cryptographically signed token.
-3.  **Delivery:** The token is not returned in the JSON body. Instead, it is attached to an `HttpOnly`, `SameSite=Lax` cookie named `linkly_token`. This makes the token completely invisible to client-side JavaScript (thwarting Cross-Site Scripting - XSS).
-4.  **Verification:** Every incoming request passes through the `JwtAuthenticationFilter`. The filter extracts the cookie, validates the signature, and ensures the user account `isSuspended == false`.
+## 4. UI/UX Philosophy
+The frontend utilizes a strict, "Apple-inspired" design language:
+- **Typography:** Bold, tightly-kerned Sans-Serif headers (`font-weight: 700`, `letter-spacing: -0.04em`).
+- **Glassmorphism:** Widespread use of `backdrop-filter: blur(20px)` over translucent backgrounds to create a deep, layered application feel.
+- **Responsiveness:** CSS Grid and Flexbox with mobile-first media queries to ensure 100% feature parity across desktop and mobile devices.
 
----
-
-## 3. The Data Layer (PostgreSQL & Spring Data JPA)
-
-The database schema is heavily relational and normalized.
-
-### Core Entities
-*   **User:** Contains standard identity fields, along with platform settings (`enableUpiPayment`, `enablePublicMessaging`).
-*   **Link:** Tied to a User via a `@ManyToOne` relationship. Tracks the `originalUrl`, `shortUrl`, `active` status, and `sortOrder`.
-*   **Message:** Tied to a User. Represents public messages left on their profile.
-
-### Short URL Generation Algorithm
-If a user does not provide a custom alias, the `UrlShortenerService` generates a random 6-character alphanumeric string (`SecureRandom`). It recursively checks the database to ensure absolute uniqueness before saving, preventing collision edge cases.
-
----
-
-## 4. High-Performance Caching (Redis)
-
-To handle massive spikes in traffic (e.g., when a user links their profile on a viral social media post), the public profile endpoint (`/public/u/{username}`) is aggressively cached.
-
-### Implementation Details
-*   **Data Serialization:** Java Objects are serialized into JSON using `GenericJackson2JsonRedisSerializer` in the `RedisConfig`. This prevents class-cast exceptions and makes the Redis store readable.
-*   **`@Cacheable`:** Read operations intercept the DB call and fetch directly from RAM.
-*   **Event-Driven Eviction (`@CacheEvict`):** Cache invalidation is the hardest problem in computer science, handled elegantly here via AOP (Aspect-Oriented Programming). Whenever a user updates their settings, reorders their links, or adds/deletes a link, the `UserService` and `LinkService` trigger a targeted cache eviction for that specific `#username`. The next visitor will trigger a fresh DB query, rehydrating the cache.
-
----
-
-## 5. Frontend Engineering
-
-The frontend avoids heavy component frameworks (like Material UI) in favor of lightweight, custom CSS variables to maintain an Apple-inspired "Glassmorphism" aesthetic.
-
-### Key Libraries
-*   **Zod & React-Hook-Form:** Forms do not rely on standard React `useState` (which causes excessive re-renders). Inputs are registered to the hook, and Zod validates schemas before the payload ever hits the network.
-*   **@hello-pangea/dnd:** Used for the drag-and-drop link reordering in the dashboard. When a user drags a link, the frontend optimistically updates the UI array, and asynchronously fires an `api.put('/links/reorder')` payload containing the newly sorted IDs.
-*   **Axios Interceptors:** A global Axios interceptor catches any `401 Unauthorized` or `403 Forbidden` responses. If a user's session expires or they are suspended, the interceptor automatically purges local state and forcibly redirects them to the login screen.
-
----
-
-## 6. Scalability & Future Roadmap
-
-The current architecture is highly horizontally scalable.
-*   The Spring Boot application is entirely stateless.
-*   Multiple instances of the backend can be spun up behind a Load Balancer, all relying on the centralized Redis and Postgres clusters.
-
-**Planned Features (Phase 4 & Beyond):**
-1.  **IP Geolocation Analytics:** Utilizing `ipapi` to track geographic click heatmaps.
-2.  **Kafka Event Streaming:** Offloading click-tracking (`clickCount++`) to an asynchronous Kafka topic to prevent write-locks on the primary database during viral traffic spikes.
+## 5. Security Summary
+- **No Information Disclosure:** Global Exception Handlers catch all unhandled errors and return generic 500 status messages to the client to prevent stack-trace leaking.
+- **CORS Hardening:** Specifically configured to only accept credentials from trusted origins (the Vercel edge network and localhost).
+- **Password Hashing:** Passwords are cryptographically hashed using `BCrypt` before ever touching the database.

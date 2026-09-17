@@ -120,7 +120,7 @@ const Dashboard = () => {
         </div>
       )}
 
-      <div className="flex gap-4 mb-8">
+      <div className="flex flex-responsive gap-4 mb-8">
         <div className="card glass" style={{ flex: 1 }}>
           <div className="text-secondary mb-2">Total Links</div>
           <h2>{stats.totalLinks}</h2>
@@ -134,8 +134,8 @@ const Dashboard = () => {
       <div className="card glass mb-8">
         <h3 className="mb-4">Create New Link</h3>
         <form onSubmit={handleSubmit(onSubmit)} className="flex-col gap-4">
-          <div className="flex gap-4 items-start flex-wrap">
-            <div style={{ flex: '1 1 200px' }}>
+          <div className="flex flex-responsive gap-4 items-start flex-wrap">
+            <div style={{ flex: '1 1 200px', width: '100%' }}>
               <input 
                 type="text" 
                 placeholder="Title (e.g. My Twitter)" 
@@ -144,7 +144,7 @@ const Dashboard = () => {
               />
               {errors.title && <p className="text-danger" style={{ fontSize: '0.8rem', marginTop: '4px' }}>{errors.title.message}</p>}
             </div>
-            <div style={{ flex: '2 1 300px' }}>
+            <div style={{ flex: '2 1 300px', width: '100%' }}>
               <input 
                 type="url" 
                 placeholder="https://example.com" 
@@ -153,7 +153,7 @@ const Dashboard = () => {
               />
               {errors.originalUrl && <p className="text-danger" style={{ fontSize: '0.8rem', marginTop: '4px' }}>{errors.originalUrl.message}</p>}
             </div>
-            <div style={{ flex: '1 1 200px' }}>
+            <div style={{ flex: '1 1 200px', width: '100%' }}>
               <input 
                 type="text" 
                 placeholder="Custom Alias (optional)" 
@@ -162,7 +162,7 @@ const Dashboard = () => {
               />
               {errors.customAlias && <p className="text-danger" style={{ fontSize: '0.8rem', marginTop: '4px' }}>{errors.customAlias.message}</p>}
             </div>
-            <button type="submit" className="btn btn-primary" style={{ height: '48px', flexShrink: 0 }}>
+            <button type="submit" className="btn btn-primary" style={{ height: '48px', flexShrink: 0, width: '100%' }}>
               <Plus size={18} /> Add
             </button>
           </div>
@@ -183,7 +183,7 @@ const Dashboard = () => {
                     <div
                       ref={provided.innerRef}
                       {...provided.draggableProps}
-                      className="card glass flex items-center justify-between"
+                      className="card glass flex flex-responsive justify-between gap-4"
                       style={{ 
                         padding: '20px', 
                         opacity: link.active ? 1 : 0.6,
