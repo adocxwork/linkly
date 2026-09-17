@@ -24,6 +24,9 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final AuthenticationManager authenticationManager;
+    private final com.gupta.linkly.repository.PasswordResetTokenRepository tokenRepository;
+    private final EmailService emailService;
+    private final org.springframework.core.env.Environment env;
 
     public AuthResponse register(RegisterRequest request) {
         if (userRepository.existsByUsername(request.getUsername())) {
@@ -97,5 +100,50 @@ public class AuthService {
                 .build();
 
         return new AuthResponse(token, userProfile);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public void forgotPassword(String identifier) {
+        User user = null;
+        if (identifier.contains("@")) {
+            user = userRepository.findByEmail(identifier).orElse(null);
+        } else {
+            user = userRepository.findByUsername(identifier).orElse(null);
+        }
+
+        if (user != null) {
+            tokenRepository.deleteByUser(user); // Remove old tokens
+            
+            String tokenValue = java.util.UUID.randomUUID().toString();
+            com.gupta.linkly.entity.PasswordResetToken token = com.gupta.linkly.entity.PasswordResetToken.builder()
+                    .token(tokenValue)
+                    .user(user)
+                    .expiryDate(java.time.LocalDateTime.now().plusMinutes(30))
+                    .build();
+            
+            tokenRepository.save(token);
+            
+            String baseUrl = env.getProperty("VITE_BACKEND_URL", "http://localhost:5173");
+            String resetLink = baseUrl + "/reset-password?token=" + tokenValue;
+            
+            emailService.sendPasswordResetEmail(user.getEmail(), resetLink);
+        }
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public void resetPassword(String token, String newPassword) {
+        com.gupta.linkly.entity.PasswordResetToken resetToken = tokenRepository.findByToken(token)
+                .orElseThrow(() -> new IllegalArgumentException("Invalid token"));
+        
+        if (resetToken.getExpiryDate().isBefore(java.time.LocalDateTime.now())) {
+            tokenRepository.delete(resetToken);
+            throw new IllegalArgumentException("Token has expired");
+        }
+        
+        User user = resetToken.getUser();
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+        
+        tokenRepository.delete(resetToken);
     }
 }
