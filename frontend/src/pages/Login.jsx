@@ -24,14 +24,75 @@ const Login = () => {
     }
   };
 
+  const [keepAlive, setKeepAlive] = React.useState(false);
+  const [loadingStatus, setLoadingStatus] = React.useState(true);
+  const [toggleLoading, setToggleLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    const fetchKeepAlive = async () => {
+      try {
+        const { data } = await api.get('/system/keep-alive');
+        setKeepAlive(data.enabled);
+      } catch (err) {
+        console.error("Failed to fetch keep-alive status", err);
+      } finally {
+        setLoadingStatus(false);
+      }
+    };
+    fetchKeepAlive();
+  }, []);
+
+  const handleToggleKeepAlive = async () => {
+    setToggleLoading(true);
+    try {
+      const { data } = await api.post('/system/keep-alive', { enabled: !keepAlive });
+      setKeepAlive(data.enabled);
+    } catch (err) {
+      console.error("Failed to toggle keep-alive", err);
+    } finally {
+      setToggleLoading(false);
+    }
+  };
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="card glass" 
-      style={{ maxWidth: '400px', margin: '4rem auto' }}
+      style={{ maxWidth: '400px', margin: '4rem auto', position: 'relative' }}
     >
       <h2 className="text-center mb-6">Welcome Back</h2>
+      
+      {/* Keep Alive Status Bar */}
+      <div style={{
+        background: 'var(--surface-color)', padding: '1rem', borderRadius: '12px', 
+        marginBottom: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        border: '1px solid var(--border-color)'
+      }}>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-color)' }}>Keep Server Awake</span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+            {loadingStatus ? 'Checking server status (might take 30s)...' : 'Prevents Render from sleeping'}
+          </span>
+        </div>
+        <button 
+          onClick={handleToggleKeepAlive}
+          disabled={loadingStatus || toggleLoading}
+          style={{
+            background: keepAlive ? 'var(--success-color)' : 'var(--border-color)',
+            border: 'none', borderRadius: '20px', width: '40px', height: '22px',
+            position: 'relative', cursor: (loadingStatus || toggleLoading) ? 'wait' : 'pointer',
+            transition: 'background 0.3s ease'
+          }}
+        >
+          <div style={{
+            position: 'absolute', top: '2px', left: keepAlive ? '20px' : '2px',
+            width: '18px', height: '18px', background: 'white', borderRadius: '50%',
+            transition: 'left 0.3s ease', boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+          }} />
+        </button>
+      </div>
+
       {error && <div className="toast error mb-4 text-center">{error}</div>}
       <form onSubmit={handleLogin}>
         <div className="form-group">
