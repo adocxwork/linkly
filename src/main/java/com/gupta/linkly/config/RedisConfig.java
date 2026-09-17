@@ -25,4 +25,44 @@ public class RedisConfig {
             .cacheDefaults(config)
             .build();
     }
+
+    @Bean
+    public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory) {
+        RedisTemplate<String, Object> template = new RedisTemplate<>();
+        template.setConnectionFactory(connectionFactory);
+        template.setKeySerializer(new StringRedisSerializer());
+        template.setValueSerializer(new GenericJackson2JsonRedisSerializer());
+        template.setHashKeySerializer(new StringRedisSerializer());
+        template.setHashValueSerializer(new GenericJackson2JsonRedisSerializer());
+        return template;
+    }
+
+    @Bean
+    public org.springframework.data.redis.stream.StreamMessageListenerContainer<String, org.springframework.data.redis.connection.stream.MapRecord<String, String, com.gupta.linkly.dto.ClickEvent>> streamMessageListenerContainer(
+            RedisConnectionFactory connectionFactory,
+            com.gupta.linkly.service.AnalyticsStreamConsumer streamConsumer) {
+
+        org.springframework.data.redis.stream.StreamMessageListenerContainer.StreamMessageListenerContainerOptions<String, org.springframework.data.redis.connection.stream.MapRecord<String, String, com.gupta.linkly.dto.ClickEvent>> options =
+                org.springframework.data.redis.stream.StreamMessageListenerContainer.StreamMessageListenerContainerOptions.builder()
+                        .pollTimeout(Duration.ofMillis(100))
+                        .targetType(com.gupta.linkly.dto.ClickEvent.class)
+                        .build();
+
+        org.springframework.data.redis.stream.StreamMessageListenerContainer<String, org.springframework.data.redis.connection.stream.MapRecord<String, String, com.gupta.linkly.dto.ClickEvent>> container =
+                org.springframework.data.redis.stream.StreamMessageListenerContainer.create(connectionFactory, options);
+
+        try {
+            connectionFactory.getConnection().xGroupCreate("link-clicks-stream".getBytes(), "analytics-group", org.springframework.data.redis.connection.stream.ReadOffset.from("0-0"), true);
+        } catch (Exception e) {
+            // Group might already exist
+        }
+
+        container.receive(
+                org.springframework.data.redis.connection.stream.Consumer.from("analytics-group", "consumer-1"),
+                org.springframework.data.redis.stream.StreamOffset.create("link-clicks-stream", org.springframework.data.redis.connection.stream.ReadOffset.lastConsumed()),
+                streamConsumer);
+
+        container.start();
+        return container;
+    }
 }
