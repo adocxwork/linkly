@@ -36,22 +36,6 @@ public class AuthController {
                 .body(response);
     }
 
-    @PostMapping("/forgot-password")
-    public ResponseEntity<java.util.Map<String, String>> forgotPassword(@RequestBody java.util.Map<String, String> request) {
-        authService.forgotPassword(request.get("identifier"));
-        return ResponseEntity.ok(java.util.Map.of("message", "If an account exists, a reset link has been sent."));
-    }
-
-    @PostMapping("/reset-password")
-    public ResponseEntity<java.util.Map<String, String>> resetPassword(@RequestBody java.util.Map<String, String> request) {
-        try {
-            authService.resetPassword(request.get("token"), request.get("newPassword"));
-            return ResponseEntity.ok(java.util.Map.of("message", "Password reset successfully."));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(java.util.Map.of("message", e.getMessage()));
-        }
-    }
-
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(jakarta.servlet.http.HttpServletRequest request) {
         org.springframework.http.ResponseCookie cookie = org.springframework.http.ResponseCookie.from("linkly_token", "")
