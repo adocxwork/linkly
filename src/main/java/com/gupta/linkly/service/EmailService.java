@@ -14,7 +14,7 @@ public class EmailService {
 
     private final JavaMailSender mailSender;
 
-    @Value("${spring.mail.username:noreply@linkly.com}")
+    @Value("${app.mail.from:onboarding@resend.dev}")
     private String fromEmail;
 
     public void sendPasswordResetEmail(String to, String resetLink) {
