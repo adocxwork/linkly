@@ -38,17 +38,17 @@ public class RedisConfig {
     }
 
     @Bean
-    public org.springframework.data.redis.stream.StreamMessageListenerContainer<String, org.springframework.data.redis.connection.stream.MapRecord<String, String, com.gupta.linkly.dto.ClickEvent>> streamMessageListenerContainer(
+    public org.springframework.data.redis.stream.StreamMessageListenerContainer<String, org.springframework.data.redis.connection.stream.ObjectRecord<String, com.gupta.linkly.dto.ClickEvent>> streamMessageListenerContainer(
             RedisConnectionFactory connectionFactory,
             com.gupta.linkly.service.AnalyticsStreamConsumer streamConsumer) {
 
-        org.springframework.data.redis.stream.StreamMessageListenerContainer.StreamMessageListenerContainerOptions<String, org.springframework.data.redis.connection.stream.MapRecord<String, String, com.gupta.linkly.dto.ClickEvent>> options =
+        org.springframework.data.redis.stream.StreamMessageListenerContainer.StreamMessageListenerContainerOptions<String, org.springframework.data.redis.connection.stream.ObjectRecord<String, com.gupta.linkly.dto.ClickEvent>> options =
                 org.springframework.data.redis.stream.StreamMessageListenerContainer.StreamMessageListenerContainerOptions.builder()
                         .pollTimeout(Duration.ofMillis(100))
                         .targetType(com.gupta.linkly.dto.ClickEvent.class)
                         .build();
 
-        org.springframework.data.redis.stream.StreamMessageListenerContainer<String, org.springframework.data.redis.connection.stream.MapRecord<String, String, com.gupta.linkly.dto.ClickEvent>> container =
+        org.springframework.data.redis.stream.StreamMessageListenerContainer<String, org.springframework.data.redis.connection.stream.ObjectRecord<String, com.gupta.linkly.dto.ClickEvent>> container =
                 org.springframework.data.redis.stream.StreamMessageListenerContainer.create(connectionFactory, options);
 
         try {
@@ -59,7 +59,7 @@ public class RedisConfig {
 
         container.receive(
                 org.springframework.data.redis.connection.stream.Consumer.from("analytics-group", "consumer-1"),
-                org.springframework.data.redis.stream.StreamOffset.create("link-clicks-stream", org.springframework.data.redis.connection.stream.ReadOffset.lastConsumed()),
+                org.springframework.data.redis.connection.stream.StreamOffset.create("link-clicks-stream", org.springframework.data.redis.connection.stream.ReadOffset.lastConsumed()),
                 streamConsumer);
 
         container.start();

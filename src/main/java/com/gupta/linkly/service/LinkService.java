@@ -123,7 +123,11 @@ public class LinkService {
         // Send event to Redis Stream
         try {
             com.gupta.linkly.dto.ClickEvent event = new com.gupta.linkly.dto.ClickEvent(link.getId(), ip, userAgent);
-            redisTemplate.opsForStream().add("link-clicks-stream", java.util.Collections.singletonMap("event", event));
+            org.springframework.data.redis.connection.stream.ObjectRecord<String, com.gupta.linkly.dto.ClickEvent> record = 
+                org.springframework.data.redis.connection.stream.StreamRecords.newRecord()
+                    .in("link-clicks-stream")
+                    .ofObject(event);
+            redisTemplate.opsForStream().add(record);
         } catch (Exception e) {
             // Fallback to sync if Redis fails
             analyticsService.recordClick(link, ip, userAgent);
