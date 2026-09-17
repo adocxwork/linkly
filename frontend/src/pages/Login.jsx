@@ -79,16 +79,17 @@ const Login = () => {
           onClick={handleToggleKeepAlive}
           disabled={loadingStatus || toggleLoading}
           style={{
-            background: keepAlive ? 'var(--success-color)' : 'var(--border-color)',
-            border: 'none', borderRadius: '20px', width: '40px', height: '22px',
+            background: keepAlive ? '#10b981' : '#e5e7eb',
+            border: 'none', borderRadius: '20px', width: '44px', height: '24px',
             position: 'relative', cursor: (loadingStatus || toggleLoading) ? 'wait' : 'pointer',
-            transition: 'background 0.3s ease'
+            transition: 'background 0.3s ease', padding: 0
           }}
         >
           <div style={{
-            position: 'absolute', top: '2px', left: keepAlive ? '20px' : '2px',
-            width: '18px', height: '18px', background: 'white', borderRadius: '50%',
-            transition: 'left 0.3s ease', boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+            position: 'absolute', top: '2px', left: keepAlive ? '22px' : '2px',
+            width: '20px', height: '20px', background: 'white', borderRadius: '50%',
+            transition: 'left 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)', 
+            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
           }} />
         </button>
       </div>
