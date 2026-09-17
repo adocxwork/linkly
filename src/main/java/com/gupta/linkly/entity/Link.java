@@ -46,6 +46,10 @@ public class Link {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    @OneToMany(mappedBy = "link", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private java.util.List<ClickAnalytics> clickAnalytics = new java.util.ArrayList<>();
+
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;
