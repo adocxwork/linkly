@@ -31,9 +31,9 @@ public class RedirectController {
             String originalUrl = linkService.getOriginalUrlAndIncrementClick(shortUrl, ip, userAgent);
             response.sendRedirect(originalUrl);
         } catch (com.gupta.linkly.exception.ResourceNotFoundException ex) {
-            String baseUrl = System.getenv("VITE_BACKEND_URL");
+            String baseUrl = System.getenv("FRONTEND_URL");
             if (baseUrl == null || baseUrl.isEmpty()) {
-                baseUrl = "https://linkly-amwf.onrender.com";
+                baseUrl = "https://linkly-plum.vercel.app";
             }
             response.sendRedirect(baseUrl + "/link-error"); // Will redirect to frontend
         }
