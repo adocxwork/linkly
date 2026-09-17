@@ -25,7 +25,7 @@ public class LinkService {
     private final UrlShortenerService urlShortenerService;
     private final AnalyticsService analyticsService;
     private final com.gupta.linkly.repository.ClickAnalyticsRepository analyticsRepository;
-    private final org.springframework.data.redis.core.RedisTemplate<String, Object> redisTemplate;
+    private final org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
 
     @org.springframework.cache.annotation.CacheEvict(value = "publicProfiles", key = "#username")
     public LinkResponse addLink(String username, LinkRequest request) {
@@ -123,11 +123,8 @@ public class LinkService {
         // Send event to Redis Stream
         try {
             com.gupta.linkly.dto.ClickEvent event = new com.gupta.linkly.dto.ClickEvent(link.getId(), ip, userAgent);
-            org.springframework.data.redis.connection.stream.ObjectRecord<String, com.gupta.linkly.dto.ClickEvent> record = 
-                org.springframework.data.redis.connection.stream.StreamRecords.newRecord()
-                    .in("link-clicks-stream")
-                    .ofObject(event);
-            redisTemplate.opsForStream().add(record);
+            String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(event);
+            stringRedisTemplate.opsForStream().add("link-clicks-stream", java.util.Collections.singletonMap("payload", json));
         } catch (Exception e) {
             // Fallback to sync if Redis fails
             analyticsService.recordClick(link, ip, userAgent);

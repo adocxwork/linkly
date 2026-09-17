@@ -5,7 +5,7 @@ import com.gupta.linkly.entity.Link;
 import com.gupta.linkly.repository.LinkRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.connection.stream.ObjectRecord;
+import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.stream.StreamListener;
 import org.springframework.stereotype.Service;
 
@@ -14,16 +14,17 @@ import java.util.Optional;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class AnalyticsStreamConsumer implements StreamListener<String, ObjectRecord<String, ClickEvent>> {
+public class AnalyticsStreamConsumer implements StreamListener<String, MapRecord<String, String, String>> {
 
     private final AnalyticsService analyticsService;
     private final LinkRepository linkRepository;
 
     @Override
-    public void onMessage(ObjectRecord<String, ClickEvent> message) {
+    public void onMessage(MapRecord<String, String, String> message) {
         try {
-            ClickEvent event = message.getValue();
-            if (event != null) {
+            String json = message.getValue().get("payload");
+            if (json != null) {
+                ClickEvent event = new com.fasterxml.jackson.databind.ObjectMapper().readValue(json, ClickEvent.class);
                 Optional<Link> linkOpt = linkRepository.findById(event.getLinkId());
                 if (linkOpt.isPresent()) {
                     // This now happens completely detached from the user's request thread!

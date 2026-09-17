@@ -38,17 +38,16 @@ public class RedisConfig {
     }
 
     @Bean
-    public org.springframework.data.redis.stream.StreamMessageListenerContainer<String, org.springframework.data.redis.connection.stream.ObjectRecord<String, com.gupta.linkly.dto.ClickEvent>> streamMessageListenerContainer(
+    public org.springframework.data.redis.stream.StreamMessageListenerContainer<String, org.springframework.data.redis.connection.stream.MapRecord<String, String, String>> streamMessageListenerContainer(
             RedisConnectionFactory connectionFactory,
             com.gupta.linkly.service.AnalyticsStreamConsumer streamConsumer) {
 
-        org.springframework.data.redis.stream.StreamMessageListenerContainer.StreamMessageListenerContainerOptions<String, org.springframework.data.redis.connection.stream.ObjectRecord<String, com.gupta.linkly.dto.ClickEvent>> options =
+        org.springframework.data.redis.stream.StreamMessageListenerContainer.StreamMessageListenerContainerOptions<String, org.springframework.data.redis.connection.stream.MapRecord<String, String, String>> options =
                 org.springframework.data.redis.stream.StreamMessageListenerContainer.StreamMessageListenerContainerOptions.builder()
                         .pollTimeout(Duration.ofMillis(100))
-                        .targetType(com.gupta.linkly.dto.ClickEvent.class)
                         .build();
 
-        org.springframework.data.redis.stream.StreamMessageListenerContainer<String, org.springframework.data.redis.connection.stream.ObjectRecord<String, com.gupta.linkly.dto.ClickEvent>> container =
+        org.springframework.data.redis.stream.StreamMessageListenerContainer<String, org.springframework.data.redis.connection.stream.MapRecord<String, String, String>> container =
                 org.springframework.data.redis.stream.StreamMessageListenerContainer.create(connectionFactory, options);
 
         try {
