@@ -20,6 +20,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 
     private final Map<String, Bucket> authBuckets = new ConcurrentHashMap<>();
     private final Map<String, Bucket> publicBuckets = new ConcurrentHashMap<>();
+    private final Map<String, Bucket> redirectBuckets = new ConcurrentHashMap<>();
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -40,6 +41,12 @@ public class RateLimitingFilter extends OncePerRequestFilter {
                 sendErrorResponse(response);
                 return;
             }
+        } else if (path.startsWith("/r/")) {
+            Bucket bucket = redirectBuckets.computeIfAbsent(ip, this::createNewRedirectBucket);
+            if (!bucket.tryConsume(1)) {
+                sendErrorResponse(response);
+                return;
+            }
         }
 
         filterChain.doFilter(request, response);
@@ -54,6 +61,12 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     private Bucket createNewPublicBucket(String ip) {
         // 30 requests per minute for Public endpoints (Messaging, Profiles)
         Bandwidth limit = Bandwidth.classic(30, Refill.greedy(30, Duration.ofMinutes(1)));
+        return Bucket.builder().addLimit(limit).build();
+    }
+
+    private Bucket createNewRedirectBucket(String ip) {
+        // 300 requests per minute for Short Link Redirects to prevent spam but allow normal sharing
+        Bandwidth limit = Bandwidth.classic(300, Refill.greedy(300, Duration.ofMinutes(1)));
         return Bucket.builder().addLimit(limit).build();
     }
 

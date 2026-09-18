@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Link2, LogOut, Settings, LayoutDashboard, Shield } from 'lucide-react';
+import { Link2, LogOut, Settings, LayoutDashboard, Shield, Menu, X, User, Mail } from 'lucide-react';
 import api from '../api';
+
 const Navbar = () => {
   const navigate = useNavigate();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const user = JSON.parse(localStorage.getItem('user') || 'null');
 
   const handleLogout = async () => {
@@ -14,40 +16,48 @@ const Navbar = () => {
     navigate('/login');
   };
 
+  const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
+  const closeMenu = () => setIsMobileMenuOpen(false);
+
   return (
     <nav className="navbar glass" style={{ padding: '0 20px', height: '64px' }}>
-      <Link to="/" className="nav-brand">
+      <Link to="/" className="nav-brand" onClick={closeMenu}>
         <Link2 size={24} color="var(--accent-color)" />
         Linkly
       </Link>
-      <div className="nav-links">
+      
+      <button className="mobile-menu-btn" onClick={toggleMenu}>
+        {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+      </button>
+
+      <div className={`nav-links ${isMobileMenuOpen ? 'open' : ''}`}>
         {user ? (
           <>
             {user.role === 'ROLE_ADMIN' && (
-              <Link to="/admin" className="btn btn-secondary">
+              <Link to="/admin" className="btn btn-secondary" onClick={closeMenu}>
                 <Shield size={18} /> Admin
               </Link>
             )}
-            <Link to="/dashboard" className="btn btn-secondary">
+            <Link to="/dashboard" className="btn btn-secondary" onClick={closeMenu}>
               <LayoutDashboard size={18} /> Dashboard
             </Link>
-            <Link to={`/p/${user.username}`} target="_blank" className="btn btn-secondary">
-              Profile
+            <Link to={`/p/${user.username}`} target="_blank" className="btn btn-secondary" onClick={closeMenu}>
+              <User size={18} /> Profile
             </Link>
-            <Link to="/inbox" className="btn btn-secondary">
-              Inbox
+            <Link to="/inbox" className="btn btn-secondary" onClick={closeMenu}>
+              <Mail size={18} /> Inbox
             </Link>
-            <Link to="/settings" className="btn btn-icon">
+            <Link to="/settings" className="btn btn-icon" onClick={closeMenu}>
               <Settings size={20} />
             </Link>
-            <button onClick={handleLogout} className="btn btn-icon text-danger">
+            <button onClick={() => { handleLogout(); closeMenu(); }} className="btn btn-icon text-danger">
               <LogOut size={20} />
             </button>
           </>
         ) : (
           <>
-            <Link to="/login" className="btn btn-secondary">Login</Link>
-            <Link to="/register" className="btn btn-primary">Sign Up</Link>
+            <Link to="/login" className="btn btn-secondary" onClick={closeMenu}>Login</Link>
+            <Link to="/register" className="btn btn-primary" onClick={closeMenu}>Sign Up</Link>
           </>
         )}
       </div>
