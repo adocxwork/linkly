@@ -300,9 +300,9 @@ p { font-size: 1.125rem; color: var(--text-secondary); letter-spacing: -0.01em; 
 }
 
 @media (max-width: 768px) {
-  h1 { font-size: 2rem; }
-  h2 { font-size: 1.5rem; }
-  h3 { font-size: 1.25rem; }
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.3rem; }
+  h3 { font-size: 1.15rem; }
   
   .flex-responsive {
     flex-direction: column !important;

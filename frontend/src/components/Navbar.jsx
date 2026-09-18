@@ -47,11 +47,11 @@ const Navbar = () => {
             <Link to="/inbox" className="btn btn-secondary" onClick={closeMenu}>
               <Mail size={18} /> Inbox
             </Link>
-            <Link to="/settings" className="btn btn-icon" onClick={closeMenu}>
-              <Settings size={20} />
+            <Link to="/settings" className="btn btn-secondary" onClick={closeMenu}>
+              <Settings size={18} /> Settings
             </Link>
-            <button onClick={() => { handleLogout(); closeMenu(); }} className="btn btn-icon text-danger">
-              <LogOut size={20} />
+            <button onClick={() => { handleLogout(); closeMenu(); }} className="btn btn-secondary" style={{ color: 'var(--danger-color)' }}>
+              <LogOut size={18} /> Logout
             </button>
           </>
         ) : (
