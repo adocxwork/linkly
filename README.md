@@ -11,7 +11,7 @@ Developed from the ground up as a **distributed, backend-intensive application**
 
 ---
 
-## 🔥 System Architecture & Engineering Highlights
+## 🔥 Enterprise Architecture & Engineering Highlights
 
 This platform was built to demonstrate how to engineer software for scale, moving beyond simple CRUD applications into the realm of enterprise systems:
 
@@ -21,21 +21,24 @@ To prevent database locking during viral traffic spikes, the analytics engine us
 ### 2. Sub-Millisecond Read Latency (Redis Caching)
 Leverages a serverless **Upstash Redis** caching layer. Creator profile endpoints heavily utilize Spring's `@Cacheable` and event-driven `@CacheEvict` invalidation, ensuring that 99% of viral traffic hits RAM instead of bottlenecking the PostgreSQL database.
 
-### 3. Fortified Security & Reverse Proxy Architecture
-Authentication is entirely stateless, powered by JSON Web Tokens (JWT). However, tokens are strictly transported via `HttpOnly`, `SameSite=Lax` cookies, rendering the application immune to XSS attacks. To bypass draconian browser third-party cookie restrictions, the Vercel-hosted Edge Network acts as a **Reverse Proxy**, seamlessly routing `/api/*` requests to the Render-hosted Spring Boot cluster as first-party traffic.
+### 3. Bulletproof Security & DDoS Protection
+Authentication is entirely stateless, powered by JSON Web Tokens (JWT). However, tokens are strictly transported via `HttpOnly`, `SameSite=Lax` cookies, rendering the application immune to XSS attacks. Furthermore, the API employs **Bucket4j** for dynamic IP-based Rate Limiting to prevent brute-force login attempts and protect the short-link resolution endpoints from orchestrated DDoS spam.
 
-### 4. Self-Healing Keep-Alive Infrastructure
-To combat serverless cold-starts on free-tier hosting (Render), the backend implements a resilient `@Scheduled` Keep-Alive pinging mechanism governed by a distributed database flag. This ensures the application remains instantly responsive for global users.
+### 4. Zero-Downtime Database Migrations (Flyway)
+The persistence layer is managed entirely by **Flyway Database Migrations**. Instead of relying on unsafe ORM auto-generation (`ddl-auto`), every database change is strictly version-controlled (`V1__init_schema.sql`), ensuring deterministic, zero-downtime deployments and safe schema evolution across distributed environments.
 
-### 5. Advanced Geo-Tracking & Device Fingerprinting
-Ingests raw HTTP headers and IP addresses, running them through an external Geo-IP API and User-Agent parser to instantly aggregate traffic by Country, Device Type, and Browser. This data is visualized on the frontend using responsive Recharts pie charts.
+### 5. Automated Testing & Code Quality
+The core business logic is fortified by a comprehensive suite of **JUnit 5 and Mockito** unit tests. Repositories and external services are mocked in isolation, ensuring deterministic validation of high-risk workflows like URL collision handling, public profile resolution, and user suspension. 
+
+### 6. Observability & Interactive API Specs
+The API conforms to strict REST standards and is self-documenting via **Swagger / OpenAPI 3.0**. Developers can instantly interact with the API via the `/swagger-ui/index.html` portal. Additionally, **Spring Boot Actuator** exposes live `/actuator/health` and `/actuator/metrics` endpoints for real-time Prometheus/Grafana system monitoring.
 
 ---
 
 ## ✨ Core Features
 
-- **Centralized Creator Hub (`/u/{username}`)**: Clean, glassmorphism-inspired public profiles designed with an "Apple-like" premium UI for maximum conversion.
-- **Granular Traffic Analytics**: Built-in click tracking algorithms to monitor audience engagement in real-time on interactive charts.
+- **Centralized Creator Hub (`/p/{username}`)**: Clean, glassmorphism-inspired public profiles designed with an "Apple-like" premium UI for maximum conversion.
+- **Granular Traffic Analytics**: Built-in click tracking algorithms to monitor audience engagement in real-time on interactive Recharts.
 - **Custom Vanity Aliases**: Advanced routing allows creators to claim hyper-specific alias endpoints.
 - **Drag-and-Drop UI**: Optimistic state mutation using `@hello-pangea/dnd` for fluid link reordering.
 - **Role-Based Access Control (RBAC)**: Dedicated administrative command center for active platform moderation and user suspension.
@@ -43,9 +46,11 @@ Ingests raw HTTP headers and IP addresses, running them through an external Geo-
 ## 🛠️ The Tech Stack
 
 * **Backend:** Java 21, Spring Boot 3.x, Spring Security, Spring Data JPA
+* **Testing:** JUnit 5, Mockito
+* **Migrations & Docs:** Flyway, OpenAPI (Swagger), Spring Boot Actuator
 * **Event Streaming:** Redis Streams (Message Broker / Queue)
 * **Database:** PostgreSQL (Primary ACID Storage)
-* **Caching:** Upstash Redis (High-Throughput In-Memory Data Store)
+* **Caching & Rate Limiting:** Upstash Redis, Bucket4j
 * **Frontend:** React 18, Vite, Framer Motion, Recharts, Zod
 * **Infrastructure:** Vercel (Edge Routing), Render (App Cluster)
 
