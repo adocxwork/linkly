@@ -7,7 +7,11 @@
 
 Linkly is a highly scalable, production-ready **Creator Identity Platform** designed to aggregate digital presences into a single, lightning-fast micro-landing page. Engineered specifically to handle unpredictable traffic surges from viral social media campaigns, Linkly combines robust link aggregation with an **Event-Driven Analytics Engine** capable of processing tens of thousands of clicks concurrently without database degradation.
 
-Developed from the ground up as a **distributed, backend-intensive application**, this project serves as a masterclass in modern system design, asynchronous event streaming, rigorous security standards, and high-performance caching strategies.
+### 🌐 Live Environments
+- **Production Application:** [linkly-plum.vercel.app](https://linkly-plum.vercel.app)
+- **Interactive API Docs (Swagger):** [linkly-amwf.onrender.com/swagger-ui/index.html](https://linkly-amwf.onrender.com/swagger-ui/index.html)
+
+> **⏱️ Note on Initial Load:** The backend cluster is hosted on a serverless free tier to optimize costs. If the cluster is in standby mode, the initial boot sequence (cold start) may take **~40 seconds**. Once the JVM is warm, the application will respond with sub-millisecond latency.
 
 ---
 
