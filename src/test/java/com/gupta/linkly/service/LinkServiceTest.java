@@ -58,7 +58,7 @@ class LinkServiceTest {
                 .title("My Link")
                 .originalUrl("https://example.com")
                 .shortUrl("abcdef")
-                .clickCount(0)
+                .clickCount(0L)
                 .user(testUser)
                 .build();
                 
