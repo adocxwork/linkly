@@ -44,7 +44,11 @@ public class RedisConfig {
 
         org.springframework.data.redis.stream.StreamMessageListenerContainer.StreamMessageListenerContainerOptions<String, org.springframework.data.redis.connection.stream.MapRecord<String, String, String>> options =
                 org.springframework.data.redis.stream.StreamMessageListenerContainer.StreamMessageListenerContainerOptions.builder()
-                        .pollTimeout(Duration.ofMillis(100))
+                        .pollTimeout(Duration.ofMillis(1000)) // Increased to 1000ms to reduce requests
+                        .errorHandler(t -> {
+                            System.err.println("Redis Stream Error: " + t.getMessage());
+                            try { Thread.sleep(5000); } catch (Exception e) {}
+                        })
                         .build();
 
         org.springframework.data.redis.stream.StreamMessageListenerContainer<String, org.springframework.data.redis.connection.stream.MapRecord<String, String, String>> container =
