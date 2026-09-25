@@ -19,7 +19,7 @@ public class AnalyticsStreamConsumer implements StreamListener<String, MapRecord
     private final AnalyticsService analyticsService;
     private final LinkRepository linkRepository;
     private final org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
-    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+    private static final com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
 
     @Override
     public void onMessage(MapRecord<String, String, String> message) {
