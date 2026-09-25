@@ -17,5 +17,5 @@ public class LinkResponse {
     private String originalUrl;
     private String shortUrl;
     private Boolean active;
-    private Integer clickCount;
+    private Long clickCount;
 }

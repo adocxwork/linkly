@@ -21,6 +21,8 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
+    private final org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
+
 
     public UserProfileResponse getProfile(String username) {
         User user = getUserByUsername(username);
@@ -75,7 +77,13 @@ public class UserService {
         if (user.getRole() == com.gupta.linkly.entity.Role.ROLE_ADMIN) {
             throw new IllegalArgumentException("Admin account cannot be deleted");
         }
+                if (user.getLinks() != null) {
+            for (com.gupta.linkly.entity.Link link : user.getLinks()) {
+                stringRedisTemplate.delete("redirect:" + link.getShortUrl());
+            }
+        }
         userRepository.delete(user);
+
     }
 
     @org.springframework.cache.annotation.CacheEvict(value = "publicProfiles", key = "#username")
@@ -120,8 +128,14 @@ public class UserService {
         if (user.getRole() == com.gupta.linkly.entity.Role.ROLE_ADMIN) {
             throw new IllegalArgumentException("Cannot suspend an admin");
         }
-        user.setIsSuspended(!user.getIsSuspended());
+                user.setIsSuspended(!user.getIsSuspended());
         userRepository.save(user);
+        if (user.getLinks() != null) {
+            for (com.gupta.linkly.entity.Link link : user.getLinks()) {
+                stringRedisTemplate.delete("redirect:" + link.getShortUrl());
+            }
+        }
+
     }
 
     @org.springframework.cache.annotation.CacheEvict(value = "publicProfiles", key = "#username")

@@ -46,7 +46,7 @@ public class LinkService {
                 .originalUrl(request.getOriginalUrl())
                 .shortUrl(shortUrl)
                 .active(request.getActive() != null ? request.getActive() : true)
-                .clickCount(0)
+                .clickCount(0L)
                 .user(user)
                 .build();
 

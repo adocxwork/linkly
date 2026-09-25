@@ -36,7 +36,7 @@ public class Link {
 
     @Builder.Default
     @Column(nullable = false)
-    private Integer clickCount = 0;
+    private Long clickCount = 0L;
 
     @Builder.Default
     @Column(nullable = false)

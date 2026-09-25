@@ -32,12 +32,12 @@ public class LinklyApplication {
                         .name("Admin")
                         .username("admin")
                         .email("admin@linkly.com")
-                        .password(passwordEncoder.encode("admin"))
+                        .password(passwordEncoder.encode(System.getenv("ADMIN_PASSWORD") != null ? System.getenv("ADMIN_PASSWORD") : java.util.UUID.randomUUID().toString().substring(0, 8)))
                         .role(Role.ROLE_ADMIN)
                         .isSuspended(false)
                         .build();
                 userRepository.save(admin);
-                System.out.println("Admin user seeded successfully.");
+                System.out.println("Admin user seeded. Use ADMIN_PASSWORD env var to login or check DB.");
             }
         };
     }
