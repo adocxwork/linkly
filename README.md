@@ -45,10 +45,10 @@ To prevent database locking during viral traffic spikes, the analytics engine us
 ### 2. Sub-Millisecond Read Latency (Redis Caching)
 Creator profile endpoints heavily utilize Spring's `@Cacheable` and event-driven `@CacheEvict` invalidation, ensuring that 99% of viral traffic hits serverless Upstash RAM instead of bottlenecking the PostgreSQL database.
 
-### 3. Bulletproof Security & DDoS Protection
+### 3. Bulletproof Security & Application-Level Rate Limiting
 Authentication is stateless and powered by JSON Web Tokens (JWT) transported via strictly configured `HttpOnly`, `SameSite=Lax` cookies to prevent XSS. Furthermore, the API employs **Bucket4j** for dynamic IP-based Rate Limiting to stop brute-force attacks and protect short-link resolution from DDoS spam.
 
-### 4. Zero-Downtime Database Migrations (Flyway)
+### 4. Versioned Schema Migrations (Flyway)
 The persistence layer is managed entirely by **Flyway Database Migrations** (`V1__init_schema.sql`). Instead of relying on unsafe ORM auto-generation (`ddl-auto`), every database change is version-controlled, ensuring deterministic schema evolution.
 
 ### 5. Automated Testing & Observability

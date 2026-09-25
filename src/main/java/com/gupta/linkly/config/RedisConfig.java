@@ -56,7 +56,7 @@ public class RedisConfig {
             // Group might already exist
         }
 
-        container.receiveAutoAck(
+        container.receive(
                 org.springframework.data.redis.connection.stream.Consumer.from("analytics-group", "consumer-1"),
                 org.springframework.data.redis.connection.stream.StreamOffset.create("link-clicks-stream", org.springframework.data.redis.connection.stream.ReadOffset.lastConsumed()),
                 streamConsumer);

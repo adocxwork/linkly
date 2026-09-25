@@ -15,25 +15,33 @@ import java.util.Map;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class AnalyticsService {
 
     private final LinkRepository linkRepository;
     private final ClickAnalyticsRepository analyticsRepository;
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
+    private final java.util.Map<String, String[]> geoCache = new java.util.concurrent.ConcurrentHashMap<>();
 
-    @Async
+    public AnalyticsService(LinkRepository linkRepository, ClickAnalyticsRepository analyticsRepository) {
+        this.linkRepository = linkRepository;
+        this.analyticsRepository = analyticsRepository;
+        org.springframework.http.client.SimpleClientHttpRequestFactory factory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(2000);
+        factory.setReadTimeout(2000);
+        this.restTemplate = new RestTemplate(factory);
+    }
+
     @Transactional
     public void recordClick(java.util.UUID linkId, String ip, String userAgent) {
         try {
             // Increment simple counter
-            linkRepository.incrementClickCount(linkId);
-            
-
             // Ignore localhost/internal IPs
             if (ip == null || ip.equals("127.0.0.1") || ip.equals("0:0:0:0:0:0:0:1")) {
                 return;
             }
+
+            // Increment simple counter
+            linkRepository.incrementClickCount(linkId);
 
             // Parse device and browser
             String deviceType = "Desktop";
@@ -59,15 +67,22 @@ public class AnalyticsService {
             String country = "Unknown";
             String city = "Unknown";
             try {
-                // Free IP API without auth
-                String url = "http://ip-api.com/json/" + ip;
-                Map<String, Object> response = restTemplate.getForObject(url, Map.class);
-                if (response != null && "success".equals(response.get("status"))) {
-                    country = (String) response.get("country");
-                    city = (String) response.get("city");
+                if (geoCache.containsKey(ip)) {
+                    String[] cached = geoCache.get(ip);
+                    country = cached[0];
+                    city = cached[1];
+                } else {
+                    String url = "https://get.geojs.io/v1/ip/geo/" + ip + ".json";
+                    Map<String, Object> response = restTemplate.getForObject(url, Map.class);
+                    if (response != null && response.get("country") != null) {
+                        country = (String) response.get("country");
+                        city = (String) response.get("city");
+                        if (geoCache.size() < 10000) geoCache.put(ip, new String[]{country, city});
+                    }
                 }
             } catch (Exception e) {
-                log.error("Failed to fetch geo-data for IP {}: {}", ip, e.getMessage());
+                // Log without exposing raw IP aggressively
+                log.error("Failed to fetch geo-data for an IP");
             }
 
             // Save advanced analytics

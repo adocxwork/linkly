@@ -1,7 +1,0 @@
-        user.setIsSuspended(!user.getIsSuspended());
-        userRepository.save(user);
-        if (user.getLinks() != null) {
-            for (com.gupta.linkly.entity.Link link : user.getLinks()) {
-                stringRedisTemplate.delete("redirect:" + link.getShortUrl());
-            }
-        }

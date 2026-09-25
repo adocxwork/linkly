@@ -51,10 +51,6 @@ public class AuthController {
     }
 
     private boolean isSecure(jakarta.servlet.http.HttpServletRequest request) {
-        String xForwardedProto = request.getHeader("X-Forwarded-Proto");
-        if (xForwardedProto != null) {
-            return xForwardedProto.contains("https");
-        }
         return request.isSecure() || !request.getServerName().equals("localhost");
     }
 

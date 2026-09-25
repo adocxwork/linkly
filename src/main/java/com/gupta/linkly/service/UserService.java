@@ -144,6 +144,11 @@ public class UserService {
         if (user.getRole() == com.gupta.linkly.entity.Role.ROLE_ADMIN) {
             throw new IllegalArgumentException("Cannot delete an admin");
         }
+        if (user.getLinks() != null) {
+            for (com.gupta.linkly.entity.Link link : user.getLinks()) {
+                stringRedisTemplate.delete("redirect:" + link.getShortUrl());
+            }
+        }
         userRepository.delete(user);
     }
 

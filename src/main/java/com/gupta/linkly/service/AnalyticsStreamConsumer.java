@@ -18,18 +18,21 @@ public class AnalyticsStreamConsumer implements StreamListener<String, MapRecord
 
     private final AnalyticsService analyticsService;
     private final LinkRepository linkRepository;
+    private final org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     @Override
     public void onMessage(MapRecord<String, String, String> message) {
         try {
             String json = message.getValue().get("payload");
             if (json != null) {
-                ClickEvent event = new com.fasterxml.jackson.databind.ObjectMapper().readValue(json, ClickEvent.class);
+                ClickEvent event = objectMapper.readValue(json, ClickEvent.class);
                 Optional<Link> linkOpt = linkRepository.findById(event.getLinkId());
                 if (linkOpt.isPresent()) {
                     // This now happens completely detached from the user's request thread!
                     analyticsService.recordClick(linkOpt.get().getId(), event.getIp(), event.getUserAgent());
-                    log.info("Processed click event from stream for link: {}", event.getLinkId());
+                    // Processed successfully
+                    stringRedisTemplate.opsForStream().acknowledge("link-clicks-stream", "analytics-group", message.getId());
                 }
             }
         } catch (Exception e) {

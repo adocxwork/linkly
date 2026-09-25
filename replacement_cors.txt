@@ -1,8 +1,0 @@
-        String frontendUrl = System.getenv("FRONTEND_URL");
-        if (frontendUrl != null && !frontendUrl.isEmpty()) {
-            configuration.setAllowedOrigins(java.util.List.of(frontendUrl, "http://localhost:5173"));
-            configuration.setAllowCredentials(true);
-        } else {
-            configuration.setAllowedOrigins(java.util.List.of("http://localhost:5173"));
-            configuration.setAllowCredentials(true);
-        }

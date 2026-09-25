@@ -71,11 +71,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
     }
 
     private String getClientIP(HttpServletRequest request) {
-        String xfHeader = request.getHeader("X-Forwarded-For");
-        if (xfHeader == null || xfHeader.isEmpty()) {
-            return request.getRemoteAddr();
-        }
-        return xfHeader.split(",")[0];
+        return request.getRemoteAddr();
     }
 
     private void sendErrorResponse(HttpServletResponse response) throws IOException {
