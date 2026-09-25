@@ -78,9 +78,11 @@ public class UserService {
             throw new IllegalArgumentException("Admin account cannot be deleted");
         }
                 if (user.getLinks() != null) {
-            for (com.gupta.linkly.entity.Link link : user.getLinks()) {
-                stringRedisTemplate.delete("redirect:" + link.getShortUrl());
-            }
+            try {
+                for (com.gupta.linkly.entity.Link link : user.getLinks()) {
+                    stringRedisTemplate.delete("redirect:" + link.getShortUrl());
+                }
+            } catch (Exception e) {}
         }
         userRepository.delete(user);
 
@@ -131,9 +133,11 @@ public class UserService {
                 user.setIsSuspended(!user.getIsSuspended());
         userRepository.save(user);
         if (user.getLinks() != null) {
-            for (com.gupta.linkly.entity.Link link : user.getLinks()) {
-                stringRedisTemplate.delete("redirect:" + link.getShortUrl());
-            }
+            try {
+                for (com.gupta.linkly.entity.Link link : user.getLinks()) {
+                    stringRedisTemplate.delete("redirect:" + link.getShortUrl());
+                }
+            } catch (Exception e) {}
         }
 
     }
@@ -145,9 +149,11 @@ public class UserService {
             throw new IllegalArgumentException("Cannot delete an admin");
         }
         if (user.getLinks() != null) {
-            for (com.gupta.linkly.entity.Link link : user.getLinks()) {
-                stringRedisTemplate.delete("redirect:" + link.getShortUrl());
-            }
+            try {
+                for (com.gupta.linkly.entity.Link link : user.getLinks()) {
+                    stringRedisTemplate.delete("redirect:" + link.getShortUrl());
+                }
+            } catch (Exception e) {}
         }
         userRepository.delete(user);
     }

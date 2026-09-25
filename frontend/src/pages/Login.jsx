@@ -63,36 +63,7 @@ const Login = () => {
     >
       <h2 className="text-center mb-6">Welcome Back</h2>
       
-      {/* Keep Alive Status Bar */}
-      <div style={{
-        background: 'var(--surface-color)', padding: '1rem', borderRadius: '12px', 
-        marginBottom: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        border: '1px solid var(--border-color)'
-      }}>
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-color)' }}>Keep Server Awake</span>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-            {loadingStatus ? 'Checking server status (might take 30s)...' : 'Prevents Render from sleeping'}
-          </span>
-        </div>
-        <button 
-          onClick={handleToggleKeepAlive}
-          disabled={loadingStatus || toggleLoading}
-          style={{
-            background: keepAlive ? '#10b981' : '#e5e7eb',
-            border: 'none', borderRadius: '20px', width: '44px', height: '24px',
-            position: 'relative', cursor: (loadingStatus || toggleLoading) ? 'wait' : 'pointer',
-            transition: 'background 0.3s ease', padding: 0
-          }}
-        >
-          <div style={{
-            position: 'absolute', top: '2px', left: keepAlive ? '22px' : '2px',
-            width: '20px', height: '20px', background: 'white', borderRadius: '50%',
-            transition: 'left 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)', 
-            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-          }} />
-        </button>
-      </div>
+
 
       {error && <div className="toast error mb-4 text-center">{error}</div>}
       <form onSubmit={handleLogin}>

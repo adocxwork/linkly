@@ -5,6 +5,7 @@ import api from '../api';
 
 const AdminDashboard = () => {
   const [users, setUsers] = useState([]);
+  const [keepAlive, setKeepAlive] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ show: false, username: null });
   const [errorMsg, setErrorMsg] = useState('');
   const admin = JSON.parse(localStorage.getItem('user'));
@@ -17,8 +18,19 @@ const AdminDashboard = () => {
     try {
       const res = await api.get('/admin/users');
       setUsers(res.data);
+      const pingRes = await api.get('/system/keep-alive');
+      setKeepAlive(pingRes.data.enabled);
     } catch (err) {
-      console.error(err);
+      showError('Error fetching admin data');
+    }
+  };
+
+  const toggleKeepAlive = async () => {
+    try {
+      const { data } = await api.post('/system/keep-alive', { enabled: !keepAlive });
+      setKeepAlive(data.enabled);
+    } catch (err) {
+      showError('Failed to toggle keep-alive');
     }
   };
 

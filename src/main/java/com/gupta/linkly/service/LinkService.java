@@ -67,7 +67,7 @@ public class LinkService {
 
         link.setTitle(request.getTitle());
         link.setOriginalUrl(request.getOriginalUrl());
-        stringRedisTemplate.delete("redirect:" + link.getShortUrl());
+        try { stringRedisTemplate.delete("redirect:" + link.getShortUrl()); } catch (Exception e) {}
         if (request.getActive() != null) {
             link.setActive(request.getActive());
         }
@@ -80,7 +80,7 @@ public class LinkService {
     public void deleteLink(String username, UUID linkId) {
         Link link = getLinkByIdAndUser(linkId, username);
         linkRepository.delete(link);
-        stringRedisTemplate.delete("redirect:" + link.getShortUrl());
+        try { stringRedisTemplate.delete("redirect:" + link.getShortUrl()); } catch (Exception e) {}
     }
 
     @Transactional
@@ -116,7 +116,12 @@ public class LinkService {
     @Transactional
         public String getOriginalUrlAndIncrementClick(String shortUrl, String ip, String userAgent) {
         String cacheKey = "redirect:" + shortUrl;
-        String cachedData = stringRedisTemplate.opsForValue().get(cacheKey);
+        String cachedData = null;
+        try {
+            cachedData = stringRedisTemplate.opsForValue().get(cacheKey);
+        } catch (Exception e) {
+            // Ignore Redis failures
+        }
         
         java.util.UUID linkId;
         String originalUrl;
@@ -134,7 +139,11 @@ public class LinkService {
             }
             linkId = link.getId();
             originalUrl = link.getOriginalUrl();
-            stringRedisTemplate.opsForValue().set(cacheKey, linkId + "|" + originalUrl, java.time.Duration.ofHours(24));
+            try {
+                stringRedisTemplate.opsForValue().set(cacheKey, linkId + "|" + originalUrl, java.time.Duration.ofHours(24));
+            } catch (Exception e) {
+                // Ignore Redis failures
+            }
         }
 
         try {
