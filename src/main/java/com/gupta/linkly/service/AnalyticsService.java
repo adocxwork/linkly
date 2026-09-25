@@ -24,11 +24,11 @@ public class AnalyticsService {
 
     @Async
     @Transactional
-    public void recordClick(Link link, String ip, String userAgent) {
+    public void recordClick(java.util.UUID linkId, String ip, String userAgent) {
         try {
             // Increment simple counter
-            link.setClickCount(link.getClickCount() + 1);
-            linkRepository.save(link);
+            linkRepository.incrementClickCount(linkId);
+            
 
             // Ignore localhost/internal IPs
             if (ip == null || ip.equals("127.0.0.1") || ip.equals("0:0:0:0:0:0:0:1")) {
@@ -72,7 +72,7 @@ public class AnalyticsService {
 
             // Save advanced analytics
             ClickAnalytics analytics = ClickAnalytics.builder()
-                    .link(link)
+                    .link(linkRepository.getReferenceById(linkId))
                     .ipAddress(ip)
                     .country(country)
                     .city(city)
@@ -83,7 +83,7 @@ public class AnalyticsService {
             analyticsRepository.save(analytics);
 
         } catch (Exception e) {
-            log.error("Failed to record analytics for link {}: {}", link.getId(), e.getMessage());
+            log.error("Failed to record analytics for link {}: {}", linkId, e.getMessage());
         }
     }
 }

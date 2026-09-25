@@ -67,6 +67,7 @@ public class LinkService {
 
         link.setTitle(request.getTitle());
         link.setOriginalUrl(request.getOriginalUrl());
+        stringRedisTemplate.delete("redirect:" + link.getShortUrl());
         if (request.getActive() != null) {
             link.setActive(request.getActive());
         }
@@ -79,6 +80,7 @@ public class LinkService {
     public void deleteLink(String username, UUID linkId) {
         Link link = getLinkByIdAndUser(linkId, username);
         linkRepository.delete(link);
+        stringRedisTemplate.delete("redirect:" + link.getShortUrl());
     }
 
     @Transactional
@@ -112,26 +114,40 @@ public class LinkService {
     }
 
     @Transactional
-    public String getOriginalUrlAndIncrementClick(String shortUrl, String ip, String userAgent) {
-        Link link = linkRepository.findByShortUrl(shortUrl)
-                .orElseThrow(() -> new ResourceNotFoundException("Link not found"));
+        public String getOriginalUrlAndIncrementClick(String shortUrl, String ip, String userAgent) {
+        String cacheKey = "redirect:" + shortUrl;
+        String cachedData = stringRedisTemplate.opsForValue().get(cacheKey);
+        
+        java.util.UUID linkId;
+        String originalUrl;
 
-        if (Boolean.FALSE.equals(link.getActive()) || Boolean.TRUE.equals(link.getUser().getIsSuspended())) {
-            throw new ResourceNotFoundException("Link is inactive");
+        if (cachedData != null) {
+            String[] parts = cachedData.split("\\|");
+            linkId = java.util.UUID.fromString(parts[0]);
+            originalUrl = parts[1];
+        } else {
+            Link link = linkRepository.findByShortUrl(shortUrl)
+                    .orElseThrow(() -> new ResourceNotFoundException("Link not found"));
+
+            if (Boolean.FALSE.equals(link.getActive()) || Boolean.TRUE.equals(link.getUser().getIsSuspended())) {
+                throw new ResourceNotFoundException("Link is inactive");
+            }
+            linkId = link.getId();
+            originalUrl = link.getOriginalUrl();
+            stringRedisTemplate.opsForValue().set(cacheKey, linkId + "|" + originalUrl, java.time.Duration.ofHours(24));
         }
 
-        // Send event to Redis Stream
         try {
-            com.gupta.linkly.dto.ClickEvent event = new com.gupta.linkly.dto.ClickEvent(link.getId(), ip, userAgent);
+            com.gupta.linkly.dto.ClickEvent event = new com.gupta.linkly.dto.ClickEvent(linkId, ip, userAgent);
             String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(event);
             stringRedisTemplate.opsForStream().add("link-clicks-stream", java.util.Collections.singletonMap("payload", json));
         } catch (Exception e) {
-            // Fallback to sync if Redis fails
-            analyticsService.recordClick(link, ip, userAgent);
+            analyticsService.recordClick(linkId, ip, userAgent);
         }
 
-        return link.getOriginalUrl();
+        return originalUrl;
     }
+
 
     public com.gupta.linkly.dto.AnalyticsResponse getLinkAnalytics(String username, UUID linkId) {
         Link link = getLinkByIdAndUser(linkId, username);

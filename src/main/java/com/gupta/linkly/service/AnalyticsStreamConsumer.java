@@ -28,7 +28,7 @@ public class AnalyticsStreamConsumer implements StreamListener<String, MapRecord
                 Optional<Link> linkOpt = linkRepository.findById(event.getLinkId());
                 if (linkOpt.isPresent()) {
                     // This now happens completely detached from the user's request thread!
-                    analyticsService.recordClick(linkOpt.get(), event.getIp(), event.getUserAgent());
+                    analyticsService.recordClick(linkOpt.get().getId(), event.getIp(), event.getUserAgent());
                     log.info("Processed click event from stream for link: {}", event.getLinkId());
                 }
             }
