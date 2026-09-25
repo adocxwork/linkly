@@ -32,7 +32,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String jwt = null;
         final String username;
 
-        if (request.getCookies() != null) {
+        // Try Authorization header first
+        final String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            jwt = authHeader.substring(7);
+        } else if (request.getCookies() != null) {
+            // Fallback to cookie
             for (jakarta.servlet.http.Cookie cookie : request.getCookies()) {
                 if ("linkly_token".equals(cookie.getName())) {
                     jwt = cookie.getValue();

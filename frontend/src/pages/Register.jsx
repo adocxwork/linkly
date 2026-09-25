@@ -27,6 +27,7 @@ const Register = () => {
         enablePublicMessaging
       });
       localStorage.setItem('user', JSON.stringify(data.user));
+      if (data.token) localStorage.setItem('token', data.token);
       navigate('/dashboard');
     } catch (err) {
       setError(err.response?.data?.message || 'Registration failed');

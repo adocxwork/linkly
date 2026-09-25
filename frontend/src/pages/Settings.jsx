@@ -43,6 +43,7 @@ const Settings = () => {
       await api.delete('/users/me');
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+    localStorage.removeItem('token');
       navigate('/login');
     } catch (err) {
       showError(err.response?.data?.message || 'Error deleting account');

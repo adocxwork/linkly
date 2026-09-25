@@ -8,7 +8,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AuthResponse {
-    @com.fasterxml.jackson.annotation.JsonIgnore
     private String token;
     private UserProfileResponse user;
 }

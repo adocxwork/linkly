@@ -13,6 +13,7 @@ const Navbar = () => {
       await api.post('/auth/logout');
     } catch (e) {}
     localStorage.removeItem('user');
+    localStorage.removeItem('token');
     navigate('/login');
   };
 
