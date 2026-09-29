@@ -1,6 +1,6 @@
-# 🔗 Linkly: Enterprise-Grade Creator Identity Platform
+# 🔗 Linkly: Creator Identity & Analytics Platform
 
-![Linkly Banner](https://img.shields.io/badge/Linkly-High%20Throughput%20Creator%20Platform-0071e3?style=for-the-badge)
+![Linkly Banner](https://img.shields.io/badge/Linkly-Creator%20Platform-0071e3?style=for-the-badge)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.0-6DB33F?style=for-the-badge&logo=springboot)
 ![React](https://img.shields.io/badge/React-18.0-61DAFB?style=for-the-badge&logo=react&logoColor=black)
 ![Redis](https://img.shields.io/badge/Redis-Streams-DC382D?style=for-the-badge&logo=redis)
@@ -12,9 +12,9 @@
 ---
 
 ## 📌 The Problem
-Creators and influencers need a single "link-in-bio" to aggregate their digital identity. However, when a creator goes viral on TikTok or Instagram, their profile receives an unpredictable, massive surge of traffic. Standard CRUD applications buckle under this pressure—suffering from database connection pool exhaustion and table locking when trying to record analytics for every single click. 
+Creators and influencers need a single "link-in-bio" to aggregate their digital identity. However, when a creator goes viral, their profile can receive an unpredictable surge of traffic. Standard CRUD applications buckle under this pressure—suffering from database connection pool exhaustion and table locking when trying to record analytics for every single click. 
 
-**Linkly solves this.** It is explicitly designed to handle viral traffic spikes by decoupling heavy analytics writes from the critical read-paths using an event-driven message broker, ensuring the creator's page never goes down.
+**Linkly solves this.** It is explicitly designed to handle traffic spikes by decoupling heavy analytics writes from the critical read-paths using an event-driven message broker, ensuring the creator's page remains fast and responsive.
 
 ## 🏗️ How the System Works (Architecture)
 
@@ -22,53 +22,44 @@ Creators and influencers need a single "link-in-bio" to aggregate their digital 
 graph TD
     User([🌐 Global Audience]) --> Vercel[Vercel Edge Network]
     Vercel -->|Serves UI| React[React Frontend]
-    Vercel -->|Reverse Proxy /api/*| Spring[Spring Boot Cluster]
+    Vercel -->|Reverse Proxy /api/*| Spring[Spring Boot Backend]
     
     %% Read Path
     Spring -->|Profile Read| Cache[(Upstash Redis Cache)]
-    Spring -.->|Cache Miss| PG[(Supabase PostgreSQL)]
+    Spring -.->|Cache Miss| PG[(PostgreSQL)]
     
     %% Write Path (Analytics)
     Spring -->|Click Event| RedisStream[[Redis Streams Broker]]
     RedisStream -->|Consumer Thread| AnalyticsService[Analytics Consumer]
-    AnalyticsService -->|Batch Insert| PG
+    AnalyticsService -->|Process & Insert| PG
     
     %% Security
     Spring -->|Rate Limiting| Bucket4j{Bucket4j Filter}
 ```
 
-## 🔥 Enterprise Engineering Highlights
+## 🔥 Engineering Highlights
 
 ### 1. Event-Driven Analytics via Redis Streams
-To prevent database locking during viral traffic spikes, the analytics engine uses a highly optimized **Producer/Consumer pattern**. Link clicks are instantly packaged into `ClickEvents` and published to a **Redis Stream** in sub-millisecond time. A background `StreamListener` asynchronously consumes these events, performs heavy IP-geolocation lookups, and batch-inserts them into PostgreSQL.
+To prevent database locking during traffic spikes, the analytics engine uses a **Producer/Consumer pattern**. Link clicks are instantly packaged into `ClickEvents` and published to a **Redis Stream**. A background `StreamListener` asynchronously consumes these events, performs IP-geolocation lookups via an external API (with in-memory caching to avoid rate-limits), and inserts them into PostgreSQL. 
 
-### 2. Sub-Millisecond Read Latency (Redis Caching)
-Creator profile endpoints heavily utilize Spring's `@Cacheable` and event-driven `@CacheEvict` invalidation, ensuring that 99% of viral traffic hits serverless Upstash RAM instead of bottlenecking the PostgreSQL database.
+### 2. High-Availability Cache Fallbacks
+Creator profile endpoints and URL resolution utilize Spring's `@Cacheable` and explicit Redis commands to serve reads from serverless Upstash RAM. Crucially, the application implements robust **circuit-breaker-like `try-catch` fallbacks**: if the Redis cluster becomes unavailable or rate-limited, the application seamlessly fails over to PostgreSQL, ensuring true high-availability.
 
-### 3. Bulletproof Security & Application-Level Rate Limiting
-Authentication is stateless and powered by JSON Web Tokens (JWT) transported via strictly configured `HttpOnly`, `SameSite=Lax` cookies to prevent XSS. Furthermore, the API employs **Bucket4j** for dynamic IP-based Rate Limiting to stop brute-force attacks and protect short-link resolution from DDoS spam.
+### 3. Cross-Origin Security & Rate Limiting
+Authentication is stateless and powered by JSON Web Tokens (JWT). Due to modern browser restrictions on third-party cross-origin cookies (ITP/Incognito), the platform secures APIs using HTTP `Authorization: Bearer` headers. Furthermore, the API employs **Bucket4j** for dynamic IP-based rate limiting (using `ConcurrentHashMap`) to prevent brute-force attacks and mitigate spam.
 
-### 4. Versioned Schema Migrations (Flyway)
-The persistence layer is managed entirely by **Flyway Database Migrations** (`V1__init_schema.sql`). Instead of relying on unsafe ORM auto-generation (`ddl-auto`), every database change is version-controlled, ensuring deterministic schema evolution.
+### 4. Background Keep-Alive Mechanism
+To combat cold starts in the serverless environment, the system utilizes a background `@Scheduled` cron job that pings the application's health endpoint, configurable directly from the Admin Dashboard, keeping the JVM warm and responsive.
 
 ### 5. Automated Testing & Observability
-The core business logic is fortified by **JUnit 5 and Mockito** unit tests. The API conforms to strict REST standards and is self-documenting via **Swagger / OpenAPI 3.0**. **Spring Boot Actuator** exposes live `/actuator/health` metrics for system monitoring.
+The core business logic is tested using **JUnit 5 and Mockito**. The API conforms to REST standards and is self-documenting via **Swagger / OpenAPI 3.0**. **Spring Boot Actuator** exposes live `/actuator/health` metrics for system monitoring.
 
 ---
 
-## 📊 Performance & Load Strategy
-While deployed on a serverless free-tier container (512MB RAM, 0.1 CPU), the architecture is engineered to punch above its weight:
-- **Rate Limiting:** Bucket4j intercepts and drops malicious requests in `<1ms`.
-- **Read Throughput:** Viral profiles are served directly from Redis in `<10ms` without touching PostgreSQL.
-- **Write Throughput:** Click analytics are pushed to Redis Streams in `<2ms`. The background thread processes them at a controlled rate, preventing DB connection exhaustion regardless of frontend load.
-
 ## ⚖️ Trade-offs & Architecture Decisions
-- **Eventual Consistency in Analytics:** By using Redis Streams, click counts do not update instantly on the dashboard. There is a slight delay (eventual consistency). This trade-off is absolutely necessary to guarantee the public page remains fast under viral load.
-- **Stateless Authentication:** We chose JWTs over stateful sessions to allow the Spring Boot backend to scale horizontally without sticky sessions. The trade-off is that revoking a JWT immediately is difficult without building a token blacklist.
-
-## 🚧 Honest Limitations
-- **Serverless Cold Starts:** Because this is hosted on a free-tier Render cluster, the JVM goes to sleep after 15 minutes of inactivity. The first visitor may experience a **~40-second cold start delay**. Once warm, latency drops back to milliseconds.
-- **No Distributed Tracing:** While we have Actuator for metrics, we currently lack distributed tracing (e.g., Jaeger/Zipkin) to trace requests across microservices.
+- **Eventual Consistency in Analytics:** By using Redis Streams, click counts do not update instantly on the dashboard. There is a slight delay (eventual consistency). This trade-off ensures the public redirection page remains fast under load.
+- **In-Memory Rate Limiting:** Rate limiting is currently handled in JVM memory using `ConcurrentHashMap` rather than Redis. While this saves Redis bandwidth and prevents exhausting free-tier quotas, it means rate limits are not shared across multiple nodes if the application scales horizontally.
+- **Stateless Authentication:** We chose JWTs over stateful sessions to allow the Spring Boot backend to scale horizontally without sticky sessions.
 
 ---
 
@@ -83,10 +74,21 @@ While deployed on a serverless free-tier container (512MB RAM, 0.1 CPU), the arc
 
 2. **Configure the Environment:**
    Update `src/main/resources/application.properties` with your PostgreSQL and Redis credentials.
+   Required Variables:
+   - `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`
+   - `REDIS_URL`
+   - `JWT_SECRET` (Must be at least 256 bits / 32 characters)
+   - `FRONTEND_URL` (For CORS)
+   - `ADMIN_PASSWORD` (For seeding the default admin account)
 
-3. **Boot the Cluster:**
-   Linkly includes a custom orchestrator script to concurrently boot both the Spring Boot server and the Vite edge server.
+3. **Boot the Backend:**
    ```bash
-   chmod +x run.sh
-   ./run.sh
+   mvn spring-boot:run
+   ```
+
+4. **Boot the Frontend:**
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
    ```

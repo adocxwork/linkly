@@ -1,52 +1,83 @@
-# Linkly: Complete Project Documentation
+# 📚 Linkly Technical Documentation
 
-## 1. Project Overview
-**Linkly** is an enterprise-grade Creator Identity Platform designed to handle high-throughput traffic scenarios. It is engineered not just as a functional product, but as a demonstration of advanced system architecture, robust security, and event-driven data streaming.
+## 1. System Architecture
 
-## 2. System Architecture
+Linkly is a decoupled Full-Stack web application featuring a React (Vite) frontend and a Spring Boot backend. 
 
-The application is deployed across a distributed micro-architecture:
-- **Frontend Edge Network (Vercel):** Hosts the compiled React SPA. It acts as a Reverse Proxy, rewriting all `/api/*` and `/r/*` requests directly to the backend cluster. This circumvents modern browser restrictions on third-party cookies (Intelligent Tracking Prevention) since all traffic appears as first-party to the browser.
-- **Backend Application Cluster (Render):** A Spring Boot Java application handling business logic, authentication, and database orchestration.
-- **Primary Data Store (Supabase PostgreSQL):** Handles ACID-compliant, persistent storage of Users, Links, and Analytics data.
-- **In-Memory Cache & Message Broker (Upstash Redis):** Serves a dual purpose. It acts as a lightning-fast read cache for public profiles, and as a distributed message queue (Redis Streams) for processing high-volume analytics events asynchronously.
+### Core Components
+*   **Frontend (React/Vite):** Hosted on Vercel. Communicates with the backend REST API via Axios. Implements a global request interceptor to attach JWT Bearer tokens for authenticated requests.
+*   **Backend (Spring Boot 3):** Hosted on Render. Serves as the core API, handling authentication, business logic, analytics processing, and database interactions.
+*   **Database (PostgreSQL):** Relational storage for Users, Links, Analytics, and System Settings. Managed using Flyway migrations (`V1__init_schema.sql`).
+*   **Cache & Message Broker (Redis):** Provided by Upstash. Used for `@Cacheable` method caching (e.g., user profiles), manual key-value caching (link redirect resolution), and Redis Streams (asynchronous analytics processing).
 
-## 3. Key Engineering Decisions & Phases
+---
 
-### Phase 1 & 2: Core Foundation & Security
-- Implemented **JWT (JSON Web Tokens)** for stateless, scalable authentication.
-- To prevent XSS, tokens are stored strictly in `HttpOnly` cookies rather than `localStorage`.
-- Built a custom Drag-and-Drop link sorting algorithm utilizing `@hello-pangea/dnd` and optimistic UI updates.
+## 2. Request Data Flow & Integrations
 
-### Phase 3: High-Performance Caching
-- Public Creator profiles (`/u/{username}`) often face massive viral traffic spikes. Hitting the database for every page load would cause connection exhaustion.
-- Implemented **Spring Data Redis**. Profile GET requests are aggressively cached (`@Cacheable`).
-- Cache invalidation (`@CacheEvict`) is strictly tied to state-mutating actions (adding a link, updating a profile), ensuring users always see the latest data with sub-millisecond read times.
+### The Redirection Flow (`GET /r/{shortUrl}`)
+This is the most critical path in the system, designed to handle high concurrency.
+1.  **Request Arrival:** A user clicks a short link (`/r/abc`). The request hits the `RedirectController`.
+2.  **IP & User-Agent Parsing:** The backend extracts the client's actual IP address and User-Agent.
+3.  **Cache Lookup (`LinkService`):** The system queries Redis for the original URL using the key `redirect:{shortUrl}`.
+4.  **Database Fallback:** If the cache is missed (or Redis is unavailable due to connection failure), the system queries PostgreSQL, then updates the Redis cache.
+5.  **Analytics Dispatch:** A `ClickEvent` payload is published to the `link-clicks-stream` Redis Stream. If Redis is down, it synchronously falls back to the `AnalyticsService`.
+6.  **Redirection:** The server returns an HTTP 302 redirect to the original URL.
 
-### Phase 4: Advanced Geographic & Device Analytics
-- Ingests raw `X-Forwarded-For` and `User-Agent` headers.
-- Pings a lightning-fast IP-Geolocation API to convert raw IPs into actionable Country/City metrics.
-- Parses User-Agents to categorize clicks by Browser (Chrome, Safari, etc.) and Device Type (Mobile, Desktop).
-- Data is visualized using responsive **Recharts** SVGs on the creator dashboard.
+### Background Analytics Consumer (`AnalyticsStreamConsumer`)
+1.  **Polling:** A `StreamListener` continuously polls the `link-clicks-stream` consumer group.
+2.  **Geolocation:** For each event, `AnalyticsService` queries `get.geojs.io` to resolve the IP address into a Country and City. A `ConcurrentHashMap` acts as a local LRU-style cache to prevent rate-limiting from the Geo API.
+3.  **Persistence:** The rich analytics event is persisted to PostgreSQL, and the Stream message is manually acknowledged (`ACK`).
+4.  **Error Handling:** If Redis throws a "max requests limit exceeded" error, an error handler pauses polling for 5 seconds to prevent CPU exhaustion.
 
-### Phase 5: Event-Driven Analytics (Redis Streams)
-- **The Problem:** Writing to PostgreSQL is slow. If a link goes viral and receives 10,000 clicks per second, synchronously updating the `click_analytics` table would crash the database thread pool.
-- **The Solution:** Implemented an Event-Driven Architecture using **Redis Streams**. 
-- When a user clicks a link, the redirect controller instantly publishes a `ClickEvent` to a Redis Stream and redirects the user (taking < 1ms).
-- A background `AnalyticsStreamConsumer` securely consumes the queue at a safe, controlled speed, processes the geolocation data, and performs the database writes asynchronously, effectively shielding the database from load spikes.
+---
 
-### Phase 6: Keep-Alive Infrastructure
-- Render spins down free-tier servers after 15 minutes of inactivity, causing a 50-second "cold start" for the next visitor.
-- Built a `KeepAliveService` with Spring's `@Scheduled` annotation to ping the server's own health endpoint, overriding the idle-timeout mechanism.
-- Governed by a `SystemSettings` table flag, allowing the administrator to toggle the Keep-Alive engine dynamically without redeploying the application.
+## 3. Security Implementation
 
-## 4. UI/UX Philosophy
-The frontend utilizes a strict, "Apple-inspired" design language:
-- **Typography:** Bold, tightly-kerned Sans-Serif headers (`font-weight: 700`, `letter-spacing: -0.04em`).
-- **Glassmorphism:** Widespread use of `backdrop-filter: blur(20px)` over translucent backgrounds to create a deep, layered application feel.
-- **Responsiveness:** CSS Grid and Flexbox with mobile-first media queries to ensure 100% feature parity across desktop and mobile devices.
+### Stateless Authentication (JWT)
+*   **Token Generation:** `AuthService` generates a JSON Web Token signed with an HMAC-SHA256 secret (`JWT_SECRET`).
+*   **Transport:** The token is returned in the JSON payload on login/register and stored in browser `localStorage`.
+*   **Validation:** `JwtAuthenticationFilter` intercepts incoming requests, reads the `Authorization: Bearer <token>` header, validates the signature/expiration, and populates the Spring `SecurityContextHolder`.
 
-## 5. Security Summary
-- **No Information Disclosure:** Global Exception Handlers catch all unhandled errors and return generic 500 status messages to the client to prevent stack-trace leaking.
-- **CORS Hardening:** Specifically configured to only accept credentials from trusted origins (the Vercel edge network and localhost).
-- **Password Hashing:** Passwords are cryptographically hashed using `BCrypt` before ever touching the database.
+### Rate Limiting
+Implemented using **Bucket4j** in `RateLimitingFilter`. It utilizes `ConcurrentHashMap` for fast, in-memory rate limiting based on the client IP address.
+*   `/api/auth/**`: 10 requests per minute.
+*   `/api/public/**`: 30 requests per minute.
+*   `/r/**`: 300 requests per minute.
+
+---
+
+## 4. Codebase Structure
+
+### Backend (`src/main/java/com/gupta/linkly/`)
+*   `config/`: Infrastructure beans (Redis, WebMvc, Swagger).
+*   `controller/`: REST API endpoints.
+*   `dto/`: Data Transfer Objects for strictly typed request/response bodies.
+*   `entity/`: JPA Entities mapping to PostgreSQL tables.
+*   `exception/`: Global `@ControllerAdvice` exception handlers.
+*   `repository/`: Spring Data JPA interfaces.
+*   `security/`: JWT filters, Custom UserDetails, Bucket4j rate limiting.
+*   `service/`: Core business logic and background tasks.
+
+### Frontend (`frontend/src/`)
+*   `api.js`: Axios instance with JWT interceptors and 401/403 logout logic.
+*   `components/`: Reusable UI components (Navbar, AnalyticsModal).
+*   `pages/`: View components mapped to React Router routes (Dashboard, Login, Admin).
+
+---
+
+## 5. Deployment & Configuration
+
+### Environment Variables
+| Variable | Description | Default / Example |
+| :--- | :--- | :--- |
+| `DB_URL` | JDBC Postgres connection string | `jdbc:postgresql://localhost:5432/linkly` |
+| `DB_USERNAME` | Database user | `adityagupta` |
+| `DB_PASSWORD` | Database password | *(Empty)* |
+| `REDIS_URL` | Redis connection URI | *(Empty)* |
+| `JWT_SECRET` | 256-bit Hex String for JWT signing | *(Required)* |
+| `FRONTEND_URL` | Used for CORS configuration | `https://linkly-plum.vercel.app` |
+| `ADMIN_PASSWORD` | Default password for seeded admin | Auto-generated UUID |
+
+### Infrastructure
+*   **Flyway Migrations:** Enabled via `spring.flyway.enabled=true`. The schema is controlled by `V1__init_schema.sql`.
+*   **Keep-Alive Daemon:** `KeepAliveService` runs every 14 minutes. It queries the `SystemSettings` table. If enabled (controllable via the Admin UI), it pings the `/api/system/health` endpoint to prevent the Render container from spinning down.

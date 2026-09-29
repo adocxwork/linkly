@@ -73,7 +73,9 @@ public class AnalyticsService {
                     city = cached[1];
                 } else {
                     String url = "https://get.geojs.io/v1/ip/geo/" + ip + ".json";
-                    Map<String, Object> response = restTemplate.getForObject(url, Map.class);
+                    org.springframework.core.ParameterizedTypeReference<Map<String, Object>> typeRef = new org.springframework.core.ParameterizedTypeReference<Map<String, Object>>() {};
+                    org.springframework.http.ResponseEntity<Map<String, Object>> responseEntity = restTemplate.exchange(url, org.springframework.http.HttpMethod.GET, null, typeRef);
+                    Map<String, Object> response = responseEntity.getBody();
                     if (response != null && response.get("country") != null) {
                         country = (String) response.get("country");
                         city = (String) response.get("city");
