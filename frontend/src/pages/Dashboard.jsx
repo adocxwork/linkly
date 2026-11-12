@@ -1,17 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Copy, Check, Trash2, Power, Plus, GripVertical, BarChart2 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import api from '../api';
-import AnalyticsModal from '../components/AnalyticsModal';
+import api, { errorMessage, shortLinkUrl } from '../api';
+// Charts library is only downloaded when someone opens analytics.
+const AnalyticsModal = lazy(() => import('../components/AnalyticsModal'));
 
 const linkSchema = z.object({
   title: z.string().min(1, 'Title is required').max(100),
-  originalUrl: z.string().url('Must be a valid URL'),
-  customAlias: z.string().regex(/^[a-zA-Z0-9-_]*$/, 'Letters, numbers, dashes, underscores only').optional().or(z.literal('')),
+  originalUrl: z.string().url('Must be a valid URL').max(2048).regex(/^https?:\/\//i, 'Must start with http:// or https://'),
+  customAlias: z.string().regex(/^([a-zA-Z0-9_-]{3,30})?$/, '3-30 letters, numbers, dashes or underscores').optional().or(z.literal('')),
 });
 const Dashboard = () => {
   const [links, setLinks] = useState([]);
@@ -40,7 +41,7 @@ const Dashboard = () => {
       setLinks(linksRes.data);
       setStats(statsRes.data);
     } catch (err) {
-      console.error(err);
+      showError(errorMessage(err, 'Could not load your links'));
     }
   };
 
@@ -55,7 +56,7 @@ const Dashboard = () => {
       reset();
       fetchData();
     } catch (err) {
-      showError(err.response?.data?.message || 'Error adding link');
+      showError(errorMessage(err, 'Error adding link'));
     }
   };
 
@@ -64,7 +65,7 @@ const Dashboard = () => {
       await api.put(`/links/${id}`, { title, originalUrl, active: !currentStatus });
       fetchData();
     } catch (err) {
-      showError(err.response?.data?.message || 'Error updating link');
+      showError(errorMessage(err, 'Error updating link'));
     }
   };
 
@@ -74,14 +75,12 @@ const Dashboard = () => {
       setDeleteModal({ show: false, linkId: null });
       fetchData();
     } catch (err) {
-      showError(err.response?.data?.message || 'Error deleting link');
+      showError(errorMessage(err, 'Error deleting link'));
     }
   };
 
   const copyToClipboard = (shortUrl, id) => {
-    const baseUrl = import.meta.env.VITE_BACKEND_URL || window.location.origin;
-    const fullUrl = `${baseUrl}/r/${shortUrl}`;
-    navigator.clipboard.writeText(fullUrl);
+    navigator.clipboard.writeText(shortLinkUrl(shortUrl));
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   };
@@ -104,7 +103,7 @@ const Dashboard = () => {
       await api.put('/links/reorder', {
         linkIds: newLinks.map(l => l.id)
       });
-    } catch (err) {
+    } catch {
       showError('Failed to reorder');
       fetchData(); // revert on failure
     }
@@ -214,7 +213,7 @@ const Dashboard = () => {
                           </div>
                           <div className="flex items-center gap-4">
                             <span style={{ color: 'var(--accent-color)', fontWeight: 500, textDecoration: link.active ? 'none' : 'line-through' }}>
-                              /r/{link.shortUrl}
+                              {shortLinkUrl(link.shortUrl).replace(/^https?:\/\//, '')}
                             </span>
                             <span className="text-secondary" style={{ fontSize: '0.85rem' }}>{link.clickCount} clicks</span>
                           </div>
@@ -299,10 +298,12 @@ const Dashboard = () => {
       </AnimatePresence>
 
       {analyticsModal.show && (
-        <AnalyticsModal 
-          link={analyticsModal.link} 
-          onClose={() => setAnalyticsModal({ show: false, link: null })} 
-        />
+        <Suspense fallback={null}>
+          <AnalyticsModal
+            link={analyticsModal.link}
+            onClose={() => setAnalyticsModal({ show: false, link: null })}
+          />
+        </Suspense>
       )}
     </div>
   );

@@ -5,15 +5,16 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
+    // Proxy keys are path prefixes: '/r/' (not '/r'), otherwise '/register' would be proxied too.
     proxy: {
-      '/api': {
+      '/api/': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
-      '/r': {
+      '/r/': {
         target: 'http://localhost:8080',
         changeOrigin: true,
-      }
-    }
-  }
+      },
+    },
+  },
 })

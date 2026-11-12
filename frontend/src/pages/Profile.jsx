@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import QRCode from 'react-qr-code';
-import api from '../api';
+import api, { shortLinkUrl } from '../api';
 
 const Profile = () => {
   const { username } = useParams();
@@ -20,7 +20,7 @@ const Profile = () => {
       try {
         const { data } = await api.get(`/public/u/${username}`);
         setProfile(data);
-      } catch (err) {
+      } catch {
         setError(true);
       } finally {
         setLoading(false);
@@ -46,7 +46,7 @@ const Profile = () => {
       setMessageContent('');
       setTimeout(() => setMessageSuccess(false), 3000);
     } catch (err) {
-      showError('Failed to send message.');
+      showError(err.response?.data?.message || 'Failed to send message.');
     }
   };
 
@@ -98,7 +98,7 @@ const Profile = () => {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 key={link.id}
-                href={`${import.meta.env.VITE_BACKEND_URL}/r/${link.shortUrl}`}
+                href={shortLinkUrl(link.shortUrl)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn"
@@ -127,11 +127,11 @@ const Profile = () => {
           <div className="mt-8 flex-col items-center" style={{ borderTop: '1px solid var(--border-color)', paddingTop: '2rem' }}>
             <h3 className="mb-6" style={{ fontSize: '1.1rem', marginTop: 0, color: 'var(--text-secondary)' }}>☕ Buy Me a Coffee</h3>
             <div style={{ background: 'white', padding: '16px', borderRadius: 'var(--radius-lg)', display: 'inline-block', marginBottom: '16px' }}>
-              <QRCode value={`upi://pay?pa=${profile.upiId}&pn=${encodeURIComponent(profile.name)}`} size={150} />
+              <QRCode value={`upi://pay?pa=${encodeURIComponent(profile.upiId)}&pn=${encodeURIComponent(profile.name)}`} size={150} />
             </div>
             <div>
               <a 
-                href={`upi://pay?pa=${profile.upiId}&pn=${encodeURIComponent(profile.name)}`}
+                href={`upi://pay?pa=${encodeURIComponent(profile.upiId)}&pn=${encodeURIComponent(profile.name)}`}
                 className="btn"
                 style={{ 
                   padding: '10px 20px', 
@@ -163,6 +163,7 @@ const Profile = () => {
                     className="form-control" 
                     placeholder="Your Name (Optional)" 
                     value={messageName}
+                    maxLength={50}
                     onChange={(e) => setMessageName(e.target.value)}
                     style={{ background: 'var(--surface-solid)', color: 'var(--text-primary)', borderColor: 'var(--border-color)' }}
                   />
@@ -173,6 +174,7 @@ const Profile = () => {
                     placeholder="Leave a message..." 
                     rows="3" 
                     value={messageContent}
+                    maxLength={1000}
                     onChange={(e) => setMessageContent(e.target.value)}
                     required
                     style={{ background: 'var(--surface-solid)', color: 'var(--text-primary)', borderColor: 'var(--border-color)' }}

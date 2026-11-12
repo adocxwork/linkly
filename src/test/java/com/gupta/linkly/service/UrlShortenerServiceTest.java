@@ -7,10 +7,10 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class UrlShortenerServiceTest {
@@ -19,26 +19,24 @@ class UrlShortenerServiceTest {
     private LinkRepository linkRepository;
 
     @InjectMocks
-    private UrlShortenerService urlShortenerService;
+    private UrlShortenerService service;
 
     @Test
-    void testGenerateShortUrl() {
+    void generatesBase62CodeOfFixedLength() {
         when(linkRepository.existsByShortUrl(anyString())).thenReturn(false);
-
-        String shortUrl = urlShortenerService.generateShortUrl();
-
-        assertNotNull(shortUrl);
-        assertEquals(6, shortUrl.length());
+        assertThat(service.generateShortUrl()).hasSize(UrlShortenerService.URL_LENGTH).matches("[A-Za-z0-9]+");
     }
-    
+
     @Test
-    void testGenerateShortUrlWithCollision() {
-        // First generated URL exists, second does not
-        when(linkRepository.existsByShortUrl(anyString())).thenReturn(true).thenReturn(false);
+    void retriesOnCollision() {
+        when(linkRepository.existsByShortUrl(anyString())).thenReturn(true, false);
+        service.generateShortUrl();
+        verify(linkRepository, times(2)).existsByShortUrl(anyString());
+    }
 
-        String shortUrl = urlShortenerService.generateShortUrl();
-
-        assertNotNull(shortUrl);
-        assertEquals(6, shortUrl.length());
+    @Test
+    void givesUpAfterTooManyCollisionsInsteadOfLoopingForever() {
+        when(linkRepository.existsByShortUrl(anyString())).thenReturn(true);
+        assertThatThrownBy(service::generateShortUrl).isInstanceOf(IllegalStateException.class);
     }
 }

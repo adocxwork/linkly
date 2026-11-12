@@ -1,67 +1,56 @@
 package com.gupta.linkly.security;
 
+import com.gupta.linkly.entity.User;
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
-import java.util.function.Function;
 
+/**
+ * Issues and verifies HMAC-SHA256 signed JWTs.
+ * Claims: sub = username, ver = the user's token version (see {@link User#getTokenVersion()}).
+ */
 @Component
 public class JwtUtil {
 
-    @Value("${jwt.secret}")
-    private String secret;
+    public static final String VERSION_CLAIM = "ver";
 
-    @Value("${jwt.expiration}")
-    private long jwtExpiration;
+    private final SecretKey signingKey;
+    private final long expirationMs;
 
-    private SecretKey getSigningKey() {
-        byte[] keyBytes = secret.getBytes(StandardCharsets.UTF_8);
-        return Keys.hmacShaKeyFor(keyBytes);
+    public JwtUtil(@Value("${jwt.secret:}") String secret, @Value("${jwt.expiration:86400000}") long expirationMs) {
+        if (secret == null || secret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            // Fail fast at startup with a clear message instead of on the first login.
+            throw new IllegalStateException("JWT_SECRET must be set and at least 32 characters long");
+        }
+        this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+        this.expirationMs = expirationMs;
     }
 
-    public String extractUsername(String token) {
-        return extractClaim(token, Claims::getSubject);
-    }
-
-    public Date extractExpiration(String token) {
-        return extractClaim(token, Claims::getExpiration);
-    }
-
-    public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
-        final Claims claims = extractAllClaims(token);
-        return claimsResolver.apply(claims);
-    }
-
-    private Claims extractAllClaims(String token) {
-        return Jwts.parser()
-                .verifyWith(getSigningKey())
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
-    }
-
-    private Boolean isTokenExpired(String token) {
-        return extractExpiration(token).before(new Date());
-    }
-
-    public String generateToken(UserDetails userDetails) {
+    public String generateToken(User user) {
+        long now = System.currentTimeMillis();
         return Jwts.builder()
-                .subject(userDetails.getUsername())
-                .issuedAt(new Date(System.currentTimeMillis()))
-                .expiration(new Date(System.currentTimeMillis() + jwtExpiration))
-                .signWith(getSigningKey())
+                .subject(user.getUsername())
+                .claim(VERSION_CLAIM, user.getTokenVersion())
+                .issuedAt(new Date(now))
+                .expiration(new Date(now + expirationMs))
+                .signWith(signingKey)
                 .compact();
     }
 
-    public Boolean validateToken(String token, UserDetails userDetails) {
-        final String username = extractUsername(token);
-        return (username.equals(userDetails.getUsername()) && !isTokenExpired(token));
+    /** Verifies signature and expiry. Throws {@link JwtException} if the token is not valid. */
+    public Claims parse(String token) {
+        return Jwts.parser().verifyWith(signingKey).build().parseSignedClaims(token).getPayload();
+    }
+
+    public static int tokenVersion(Claims claims) {
+        Integer version = claims.get(VERSION_CLAIM, Integer.class);
+        return version == null ? 0 : version;
     }
 }

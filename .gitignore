@@ -32,3 +32,9 @@ build/
 ### VS Code ###
 .vscode/
 .DS_Store
+
+### Claude Code local files ###
+.claude/settings.local.json
+
+### Local secrets ###
+.env

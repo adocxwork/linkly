@@ -1,94 +1,118 @@
-# 🔗 Linkly: Creator Identity & Analytics Platform
+# Linkly
 
-![Linkly Banner](https://img.shields.io/badge/Linkly-Creator%20Platform-0071e3?style=for-the-badge)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.0-6DB33F?style=for-the-badge&logo=springboot)
-![React](https://img.shields.io/badge/React-18.0-61DAFB?style=for-the-badge&logo=react&logoColor=black)
-![Redis](https://img.shields.io/badge/Redis-Streams-DC382D?style=for-the-badge&logo=redis)
+A link-in-bio and URL-shortener platform. Creators get a public page (`/p/{username}`) with their
+links, an optional UPI payment QR code and an anonymous message box. Every short link
+(`/r/{code}`) records click analytics: country, device, browser, unique visitors and a 30-day trend.
 
-### 🌐 Live Environments
-- **Production Application:** [linkly-plum.vercel.app](https://linkly-plum.vercel.app)
-- **Interactive API Docs (Swagger):** [linkly-amwf.onrender.com/swagger-ui/index.html](https://linkly-amwf.onrender.com/swagger-ui/index.html)
+**Live:** [linkly-plum.vercel.app](https://linkly-plum.vercel.app) ·
+**API docs:** [Swagger UI](https://linkly-amwf.onrender.com/swagger-ui/index.html)
 
----
+## Tech stack
 
-## 📌 The Problem
-Creators and influencers need a single "link-in-bio" to aggregate their digital identity. However, when a creator goes viral, their profile can receive an unpredictable surge of traffic. Standard CRUD applications buckle under this pressure—suffering from database connection pool exhaustion and table locking when trying to record analytics for every single click. 
+| Layer | Technology | Hosted on |
+|---|---|---|
+| Backend | Java 21, Spring Boot 4.1 (Web MVC, Security, Data JPA), Flyway, Bucket4j, JJWT | Render (Docker) |
+| Database | PostgreSQL | Supabase |
+| Cache + queue | Redis (cache-aside + Redis Streams), **optional** | Upstash |
+| Frontend | React 19, Vite, Recharts | Vercel |
+| Tests / CI | JUnit 5, Mockito, Testcontainers, GitHub Actions | |
 
-**Linkly solves this.** It is explicitly designed to handle traffic spikes by decoupling heavy analytics writes from the critical read-paths using an event-driven message broker, ensuring the creator's page remains fast and responsive.
-
-## 🏗️ How the System Works (Architecture)
+## Architecture
 
 ```mermaid
-graph TD
-    User([🌐 Global Audience]) --> Vercel[Vercel Edge Network]
-    Vercel -->|Serves UI| React[React Frontend]
-    Vercel -->|Reverse Proxy /api/*| Spring[Spring Boot Backend]
-    
-    %% Read Path
-    Spring -->|Profile Read| Cache[(Upstash Redis Cache)]
-    Spring -.->|Cache Miss| PG[(PostgreSQL)]
-    
-    %% Write Path (Analytics)
-    Spring -->|Click Event| RedisStream[[Redis Streams Broker]]
-    RedisStream -->|Consumer Thread| AnalyticsService[Analytics Consumer]
-    AnalyticsService -->|Process & Insert| PG
-    
-    %% Security
-    Spring -->|Rate Limiting| Bucket4j{Bucket4j Filter}
+flowchart LR
+    V([Visitor]) -->|GET /r/code| API
+    C([Creator]) --> FE[React app on Vercel] -->|REST + JWT| API[Spring Boot API on Render]
+    API -->|cache-aside| R[(Redis cache)]
+    API -->|queries| PG[(PostgreSQL)]
+    API -->|XADD click event| S[[Redis Stream]]
+    S -->|XREADGROUP batches| W[Click worker]
+    API -.->|Redis down: in-memory queue| Q[[Local buffer]] -.-> W
+    W -->|batch Geo-IP| G[geojs.io]
+    W -->|1 transaction per batch| PG
 ```
 
-## 🔥 Engineering Highlights
+### Engineering decisions
 
-### 1. Event-Driven Analytics via Redis Streams
-To prevent database locking during traffic spikes, the analytics engine uses a **Producer/Consumer pattern**. Link clicks are instantly packaged into `ClickEvents` and published to a **Redis Stream**. A background `StreamListener` asynchronously consumes these events, performs IP-geolocation lookups via an external API (with in-memory caching to avoid rate-limits), and inserts them into PostgreSQL. 
+1. **Redirects never wait on analytics.** `/r/{code}` resolves the URL (Redis hit = no DB query),
+   queues a click event and returns `302`. A background worker stores clicks in batches: one batched
+   `INSERT` plus one `UPDATE click_count = click_count + n` per link, in a single transaction.
+2. **Redis is optional, by design.** All Redis access goes through `RedisGateway`, which has a
+   **circuit breaker**: after a failure it stops calling Redis for 30 s, so requests don't wait for
+   timeouts. Caches fall back to PostgreSQL, and clicks fall back to a bounded in-memory queue. The
+   app starts and passes its integration test with no Redis at all. Admins can switch Redis off at runtime.
+3. **At-least-once click processing.** Stream records are acknowledged (`XACK`) only after the DB
+   commit. Failed records stay pending and are retried. After 5 attempts they are dead-lettered, so
+   one bad record cannot block the queue.
+4. **Quota-aware Redis usage.** The worker reads the stream only when this instance published
+   something, plus a sweep every 5 minutes. When idle that is about 600 Redis commands a day, against
+   about 86,000 for a 1-second polling loop. The stream is capped (`MAXLEN ~10000`).
+5. **Revocable stateless auth.** JWTs carry a per-user `tokenVersion`. Changing the password, being
+   suspended or "log out of all devices" bumps it, so every older token stops working.
+6. **Security basics done properly.** BCrypt passwords; the current password is required to change
+   the email or password. Per-IP rate limits use bounded memory. The client IP comes from the
+   *right-most* trusted `X-Forwarded-For` hop (the left side can be forged). Only `http(s)` URLs are
+   accepted. Visitor IPs are stored as salted HMAC hashes, and errors never leak internals.
+7. **Schema owned by Flyway.** Hibernate never alters tables at runtime (`ddl-auto=none`). The
+   integration test validates entities against the migrated schema.
 
-### 2. High-Availability Cache Fallbacks
-Creator profile endpoints and URL resolution utilize Spring's `@Cacheable` and explicit Redis commands to serve reads from serverless Upstash RAM. Crucially, the application implements robust **circuit-breaker-like `try-catch` fallbacks**: if the Redis cluster becomes unavailable or rate-limited, the application seamlessly fails over to PostgreSQL, ensuring true high-availability.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for request flows and trade-offs, and
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the production setup.
 
-### 3. Cross-Origin Security & Rate Limiting
-Authentication is stateless and powered by JSON Web Tokens (JWT). Due to modern browser restrictions on third-party cross-origin cookies (ITP/Incognito), the platform secures APIs using HTTP `Authorization: Bearer` headers. Furthermore, the API employs **Bucket4j** for dynamic IP-based rate limiting (using `ConcurrentHashMap`) to prevent brute-force attacks and mitigate spam.
+## Admin features
 
-### 4. Background Keep-Alive Mechanism
-To combat cold starts in the serverless environment, the system utilizes a background `@Scheduled` cron job that pings the application's health endpoint, configurable directly from the Admin Dashboard, keeping the JVM warm and responsive.
+The admin dashboard shows **live system health**, refreshed every 30 s:
+- PostgreSQL: latency and connection pool
+- Redis: ping latency and circuit breaker state
+- Click pipeline: mode, stream length and pending count, processed, dropped and dead-lettered counts
+- Geo-IP API, self-ping and JVM memory
 
-### 5. Automated Testing & Observability
-The core business logic is tested using **JUnit 5 and Mockito**. The API conforms to REST standards and is self-documenting via **Swagger / OpenAPI 3.0**. **Spring Boot Actuator** exposes live `/actuator/health` metrics for system monitoring.
+It also has **runtime switches** for the Render self-ping and for Redis. Both are stored in the
+database, so they survive restarts. Admins can also suspend or delete users.
 
----
+## Running locally
 
-## ⚖️ Trade-offs & Architecture Decisions
-- **Eventual Consistency in Analytics:** By using Redis Streams, click counts do not update instantly on the dashboard. There is a slight delay (eventual consistency). This trade-off ensures the public redirection page remains fast under load.
-- **In-Memory Rate Limiting:** Rate limiting is currently handled in JVM memory using `ConcurrentHashMap` rather than Redis. While this saves Redis bandwidth and prevents exhausting free-tier quotas, it means rate limits are not shared across multiple nodes if the application scales horizontally.
-- **Stateless Authentication:** We chose JWTs over stateful sessions to allow the Spring Boot backend to scale horizontally without sticky sessions.
+Prerequisites: Java 21, Node 22, PostgreSQL. Redis is optional.
 
----
+```bash
+cp .env.example .env      # then set JWT_SECRET (openssl rand -hex 32) and DB credentials
+createdb linkly
+./run.sh                  # backend :8080, frontend :5173
+```
 
-## 🚀 Quick Start (Local Development)
+Flyway creates the schema on first start. Set `ADMIN_PASSWORD` in `.env` to get an `admin` account.
 
-### Setup
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/yourusername/linkly.git
-   cd linkly
-   ```
+## Tests
 
-2. **Configure the Environment:**
-   Update `src/main/resources/application.properties` with your PostgreSQL and Redis credentials.
-   Required Variables:
-   - `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`
-   - `REDIS_URL`
-   - `JWT_SECRET` (Must be at least 256 bits / 32 characters)
-   - `FRONTEND_URL` (For CORS)
-   - `ADMIN_PASSWORD` (For seeding the default admin account)
+```bash
+./mvnw test
+```
 
-3. **Boot the Backend:**
-   ```bash
-   mvn spring-boot:run
-   ```
+- **Unit tests:** circuit breaker, click publisher fallback, stream worker ack/retry/dead-letter,
+  client-IP resolution, User-Agent parsing, and the link/user services.
+- **Integration test:** boots the whole app against a real PostgreSQL (Testcontainers) **with no
+  Redis**, and runs register → create link → redirect → click recorded → admin health. It needs
+  Docker, or `TEST_DB_URL` pointing at an empty database. Without either it is skipped.
 
-4. **Boot the Frontend:**
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
+CI (GitHub Actions) runs the backend tests and the frontend lint and build on every push.
+
+## API overview
+
+| Method | Path | Auth |
+|---|---|---|
+| POST | `/api/auth/register`, `/api/auth/login` | public (10/min per IP) |
+| GET | `/api/public/u/{username}` | public (60/min per IP) |
+| POST | `/api/public/u/{username}/messages` | public (5/min per IP) |
+| GET | `/r/{code}` | public (120/min per IP) |
+| CRUD | `/api/links`, `/api/links/{id}/analytics`, `/api/links/reorder` | user |
+| GET/PUT | `/api/users/profile`, `/api/users/settings`; POST `/api/users/me/revoke-sessions` | user |
+| GET/DELETE | `/api/messages` | user |
+| GET/PUT | `/api/admin/users…`, `/api/admin/system/health`, `/api/admin/system/settings` | admin |
+| GET | `/actuator/health` (`/liveness`, `/readiness`) | public, no details |
+
+## Known limitations / next steps
+
+- Rate limits and the fallback click queue live in one JVM. Running several instances would need
+  Redis-backed buckets, and events in the in-memory queue are lost on restart.
+- Short links use the backend's Render domain. A custom domain would make them shorter.
+- There is no email verification or password reset (would need an email provider).

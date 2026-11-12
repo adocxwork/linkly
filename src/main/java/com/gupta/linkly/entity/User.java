@@ -6,10 +6,15 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 
+/**
+ * A registered creator (or the admin).
+ *
+ * <p>Links, messages and click analytics reference users through foreign keys with
+ * {@code ON DELETE CASCADE}, so deleting a user is a single DELETE statement. We deliberately do
+ * not map those collections here: JPA cascades would load every child row into memory first.
+ */
 @Entity
 @Table(name = "users")
 @Getter
@@ -32,6 +37,7 @@ public class User {
     @Column(nullable = false, unique = true)
     private String email;
 
+    /** BCrypt hash, never the raw password. */
     @Column(nullable = false)
     private String password;
 
@@ -43,8 +49,16 @@ public class User {
     private Role role = Role.ROLE_USER;
 
     @Builder.Default
-    @Column(name = "is_suspended")
+    @Column(name = "is_suspended", nullable = false)
     private Boolean isSuspended = false;
+
+    /**
+     * Embedded in every JWT. Incrementing it (password change, suspension, "log out everywhere")
+     * invalidates all tokens issued before, which plain stateless JWTs cannot otherwise do.
+     */
+    @Builder.Default
+    @Column(name = "token_version", nullable = false)
+    private Integer tokenVersion = 0;
 
     private String upiId;
 
@@ -56,18 +70,22 @@ public class User {
     @Column(name = "enable_public_messaging", nullable = false)
     private Boolean enablePublicMessaging = false;
 
-    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
-    @Builder.Default
-    private List<Link> links = new ArrayList<>();
-
-    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
-    @Builder.Default
-    private List<Message> messages = new ArrayList<>();
-
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;
 
     @UpdateTimestamp
     private LocalDateTime updatedAt;
+
+    public boolean isAdmin() {
+        return role == Role.ROLE_ADMIN;
+    }
+
+    public boolean suspended() {
+        return Boolean.TRUE.equals(isSuspended);
+    }
+
+    public void bumpTokenVersion() {
+        tokenVersion = (tokenVersion == null ? 0 : tokenVersion) + 1;
+    }
 }

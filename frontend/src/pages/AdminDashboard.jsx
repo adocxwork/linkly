@@ -1,14 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2, Shield, UserX, UserCheck } from 'lucide-react';
-import api from '../api';
+import api, { errorMessage } from '../api';
+import SystemHealthPanel from '../components/SystemHealthPanel';
 
 const AdminDashboard = () => {
   const [users, setUsers] = useState([]);
-  const [keepAlive, setKeepAlive] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ show: false, username: null });
   const [errorMsg, setErrorMsg] = useState('');
-  const admin = JSON.parse(localStorage.getItem('user'));
 
   useEffect(() => {
     fetchUsers();
@@ -18,33 +17,22 @@ const AdminDashboard = () => {
     try {
       const res = await api.get('/admin/users');
       setUsers(res.data);
-      const pingRes = await api.get('/system/keep-alive');
-      setKeepAlive(pingRes.data.enabled);
     } catch (err) {
-      showError('Error fetching admin data');
+      showError(errorMessage(err, 'Error fetching users'));
     }
   };
 
-  const toggleKeepAlive = async () => {
-    try {
-      const { data } = await api.post('/system/keep-alive', { enabled: !keepAlive });
-      setKeepAlive(data.enabled);
-    } catch (err) {
-      showError('Failed to toggle keep-alive');
-    }
-  };
-
-  const showError = (msg) => {
+  const showError = useCallback((msg) => {
     setErrorMsg(msg);
     setTimeout(() => setErrorMsg(''), 4000);
-  };
+  }, []);
 
   const toggleSuspend = async (username) => {
     try {
       await api.put(`/admin/users/${username}/suspend`);
       fetchUsers();
     } catch (err) {
-      showError(err.response?.data?.message || 'Error suspending user');
+      showError(errorMessage(err, 'Error suspending user'));
     }
   };
 
@@ -54,7 +42,7 @@ const AdminDashboard = () => {
       setDeleteModal({ show: false, username: null });
       fetchUsers();
     } catch (err) {
-      showError(err.response?.data?.message || 'Error deleting user');
+      showError(errorMessage(err, 'Error deleting user'));
     }
   };
 
@@ -70,27 +58,7 @@ const AdminDashboard = () => {
         <h1>Admin Control Panel</h1>
       </div>
 
-      {/* KEEP ALIVE CARD */}
-      <div className="card glass mb-8 flex justify-between items-center" style={{ padding: '1.5rem', marginBottom: '2rem' }}>
-        <div>
-          <h3 className="mb-1">Keep Server Awake</h3>
-          <p className="text-secondary text-sm">Prevents Render from sleeping</p>
-        </div>
-        <button 
-          onClick={toggleKeepAlive}
-          style={{
-            width: '44px', height: '24px', borderRadius: '12px', border: 'none', cursor: 'pointer',
-            background: keepAlive ? '#10b981' : '#e5e7eb',
-            position: 'relative', transition: 'background 0.3s'
-          }}
-        >
-          <div style={{
-            width: '20px', height: '20px', borderRadius: '50%', background: 'white',
-            position: 'absolute', top: '2px', left: keepAlive ? '22px' : '2px',
-            transition: 'left 0.3s', boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-          }} />
-        </button>
-      </div>
+      <SystemHealthPanel onError={showError} />
 
       <div className="card glass">
         <h3 className="mb-6">Registered Users ({users.length})</h3>

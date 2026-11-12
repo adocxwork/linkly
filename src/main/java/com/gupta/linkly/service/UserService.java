@@ -1,177 +1,204 @@
 package com.gupta.linkly.service;
 
-import com.gupta.linkly.dto.LinkResponse;
-import com.gupta.linkly.dto.PublicProfileResponse;
-import com.gupta.linkly.dto.UpdateProfileRequest;
-import com.gupta.linkly.dto.UserProfileResponse;
+import com.gupta.linkly.dto.*;
 import com.gupta.linkly.entity.User;
+import com.gupta.linkly.exception.BadRequestException;
+import com.gupta.linkly.exception.DuplicateResourceException;
+import com.gupta.linkly.exception.ForbiddenException;
 import com.gupta.linkly.exception.ResourceNotFoundException;
+import com.gupta.linkly.redis.CacheKeys;
+import com.gupta.linkly.redis.RedisJsonCache;
+import com.gupta.linkly.repository.LinkRepository;
 import com.gupta.linkly.repository.UserRepository;
+import com.gupta.linkly.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Sort;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
-@Transactional
+@Transactional(readOnly = true)
 public class UserService {
 
     private final UserRepository userRepository;
-    private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
-    private final org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
-
+    private final LinkRepository linkRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtUtil jwtUtil;
+    private final RedisJsonCache cache;
 
     public UserProfileResponse getProfile(String username) {
-        User user = getUserByUsername(username);
-        return mapToUserProfileResponse(user);
+        return UserProfileResponse.from(getUser(username));
     }
 
-    @org.springframework.cache.annotation.CacheEvict(value = "publicProfiles", key = "#username")
+    @Transactional
     public UserProfileResponse updateProfile(String username, UpdateProfileRequest request) {
-        User user = getUserByUsername(username);
-        user.setName(request.getName());
-        user.setBio(request.getBio());
-        userRepository.save(user);
-        return mapToUserProfileResponse(user);
+        User user = getUser(username);
+        user.setName(request.getName().trim());
+        user.setBio(AuthService.blankToNull(request.getBio()));
+        evictProfile(username);
+        return UserProfileResponse.from(user);
     }
 
-    @org.springframework.cache.annotation.Cacheable(value = "publicProfiles", key = "#username")
+    /**
+     * Public creator page. Cache-aside: try Redis, otherwise build from PostgreSQL and cache it.
+     * If Redis is down this silently becomes a database read.
+     *
+     * <p>NOT_SUPPORTED: no surrounding transaction, so a cache hit never borrows a database
+     * connection from the pool. The repository calls on a miss run in their own short transactions.
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
     public PublicProfileResponse getPublicProfile(String username) {
-        User user = getUserByUsername(username);
-        
-        if (Boolean.TRUE.equals(user.getIsSuspended())) {
-            throw new ResourceNotFoundException("User profile is suspended");
-        }
-        
-        List<LinkResponse> activeLinks = user.getLinks().stream()
-                .filter(link -> Boolean.TRUE.equals(link.getActive()))
-                .sorted(java.util.Comparator.comparing(com.gupta.linkly.entity.Link::getSortOrder)
-                        .thenComparing(com.gupta.linkly.entity.Link::getCreatedAt, java.util.Comparator.reverseOrder()))
-                .map(link -> LinkResponse.builder()
-                        .id(link.getId())
-                        .title(link.getTitle())
-                        .originalUrl(link.getOriginalUrl())
-                        .shortUrl(link.getShortUrl())
-                        .active(link.getActive())
-                        .clickCount(link.getClickCount())
-                        .build())
-                .collect(Collectors.toList());
+        String key = CacheKeys.profile(username);
+        return cache.get(key, PublicProfileResponse.class).orElseGet(() -> {
+            PublicProfileResponse profile = buildPublicProfile(username);
+            cache.put(key, profile, CacheKeys.PROFILE_TTL);
+            return profile;
+        });
+    }
 
+    private PublicProfileResponse buildPublicProfile(String username) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        if (user.suspended()) {
+            throw new ResourceNotFoundException("User not found");
+        }
+        List<PublicProfileResponse.PublicLink> links = linkRepository
+                .findByUserIdAndActiveTrueOrderBySortOrderAscCreatedAtDesc(user.getId()).stream()
+                .map(l -> new PublicProfileResponse.PublicLink(l.getId(), l.getTitle(), l.getShortUrl()))
+                .toList();
+        boolean upiOn = Boolean.TRUE.equals(user.getEnableUpiPayment()) && user.getUpiId() != null;
         return PublicProfileResponse.builder()
                 .name(user.getName())
                 .username(user.getUsername())
                 .bio(user.getBio())
-                .links(activeLinks)
-                .upiId(user.getUpiId())
-                .enableUpiPayment(user.getEnableUpiPayment())
-                .enablePublicMessaging(user.getEnablePublicMessaging())
+                .links(new ArrayList<>(links))
+                .upiId(upiOn ? user.getUpiId() : null)
+                .enableUpiPayment(upiOn)
+                .enablePublicMessaging(Boolean.TRUE.equals(user.getEnablePublicMessaging()))
                 .build();
     }
 
-    @org.springframework.cache.annotation.CacheEvict(value = "publicProfiles", key = "#username")
-    public void deleteAccount(String username) {
-        User user = getUserByUsername(username);
-        if (user.getRole() == com.gupta.linkly.entity.Role.ROLE_ADMIN) {
-            throw new IllegalArgumentException("Admin account cannot be deleted");
-        }
-                if (user.getLinks() != null) {
-            try {
-                for (com.gupta.linkly.entity.Link link : user.getLinks()) {
-                    stringRedisTemplate.delete("redirect:" + link.getShortUrl());
-                }
-            } catch (Exception e) {}
-        }
-        userRepository.delete(user);
+    /**
+     * Partial settings update. Changing the email or password requires the current password, and
+     * a password change revokes every existing session (token version bump). A fresh token for
+     * the current session is returned so the user stays logged in here.
+     */
+    @Transactional
+    public AuthResponse updateSettings(String username, ChangeSettingsRequest request) {
+        User user = getUser(username);
 
-    }
+        String newEmail = AuthService.blankToNull(request.getEmail());
+        if (newEmail != null) {
+            newEmail = newEmail.toLowerCase(Locale.ROOT);
+        }
+        boolean emailChanging = newEmail != null && !newEmail.equalsIgnoreCase(user.getEmail());
+        String newPassword = AuthService.blankToNull(request.getNewPassword());
+        boolean passwordChanging = newPassword != null;
 
-    @org.springframework.cache.annotation.CacheEvict(value = "publicProfiles", key = "#username")
-    public void updateSettings(String username, com.gupta.linkly.dto.ChangeSettingsRequest request) {
-        User user = getUserByUsername(username);
-        if (request.getEmail() != null && !request.getEmail().isBlank()) {
-            if (!user.getEmail().equals(request.getEmail()) && userRepository.existsByEmail(request.getEmail())) {
-                throw new com.gupta.linkly.exception.DuplicateResourceException("Email is already taken");
+        if (emailChanging || passwordChanging) {
+            String current = request.getCurrentPassword();
+            if (current == null || !passwordEncoder.matches(current, user.getPassword())) {
+                throw new BadRequestException("Current password is incorrect");
             }
-            user.setEmail(request.getEmail());
         }
-        if (request.getPassword() != null && !request.getPassword().isBlank()) {
-            user.setPassword(passwordEncoder.encode(request.getPassword()));
+        if (emailChanging) {
+            if (userRepository.existsByEmailIgnoreCase(newEmail)) {
+                throw new DuplicateResourceException("Email is already in use");
+            }
+            user.setEmail(newEmail);
+        }
+        if (passwordChanging) {
+            user.setPassword(passwordEncoder.encode(newPassword));
+            user.bumpTokenVersion();
         }
         if (request.getName() != null && !request.getName().isBlank()) {
-            user.setName(request.getName());
+            user.setName(request.getName().trim());
         }
         if (request.getBio() != null) {
-            user.setBio(request.getBio());
+            user.setBio(AuthService.blankToNull(request.getBio()));
         }
         if (request.getUpiId() != null) {
-            user.setUpiId(request.getUpiId());
+            user.setUpiId(AuthService.blankToNull(request.getUpiId()));
         }
         if (request.getEnableUpiPayment() != null) {
+            if (request.getEnableUpiPayment() && user.getUpiId() == null) {
+                throw new BadRequestException("Add a UPI ID before enabling UPI payments");
+            }
             user.setEnableUpiPayment(request.getEnableUpiPayment());
         }
         if (request.getEnablePublicMessaging() != null) {
             user.setEnablePublicMessaging(request.getEnablePublicMessaging());
         }
-        userRepository.save(user);
+        userRepository.saveAndFlush(user); // flush so the token below carries the new version
+        evictProfile(username);
+        return new AuthResponse(jwtUtil.generateToken(user), UserProfileResponse.from(user));
+    }
+
+    /** "Log out of all devices": every token issued so far stops working. */
+    @Transactional
+    public void revokeAllSessions(String username) {
+        getUser(username).bumpTokenVersion();
+    }
+
+    @Transactional
+    public void deleteAccount(String username) {
+        User user = getUser(username);
+        if (user.isAdmin()) {
+            throw new ForbiddenException("The admin account cannot be deleted");
+        }
+        deleteUserAndCaches(user);
     }
 
     public List<UserProfileResponse> getAllUsers() {
-        return userRepository.findAll().stream()
-                .map(this::mapToUserProfileResponse)
-                .collect(Collectors.toList());
+        return userRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt")).stream()
+                .map(UserProfileResponse::from)
+                .toList();
     }
 
-    @org.springframework.cache.annotation.CacheEvict(value = "publicProfiles", key = "#username")
-    public void toggleSuspendUser(String username) {
-        User user = getUserByUsername(username);
-        if (user.getRole() == com.gupta.linkly.entity.Role.ROLE_ADMIN) {
-            throw new IllegalArgumentException("Cannot suspend an admin");
+    @Transactional
+    public UserProfileResponse toggleSuspendUser(String username) {
+        User user = getUser(username);
+        if (user.isAdmin()) {
+            throw new ForbiddenException("Cannot suspend an admin");
         }
-                user.setIsSuspended(!user.getIsSuspended());
-        userRepository.save(user);
-        if (user.getLinks() != null) {
-            try {
-                for (com.gupta.linkly.entity.Link link : user.getLinks()) {
-                    stringRedisTemplate.delete("redirect:" + link.getShortUrl());
-                }
-            } catch (Exception e) {}
-        }
-
+        user.setIsSuspended(!user.suspended());
+        user.bumpTokenVersion(); // suspended users are logged out immediately
+        evictUserCaches(user);
+        return UserProfileResponse.from(user);
     }
 
-    @org.springframework.cache.annotation.CacheEvict(value = "publicProfiles", key = "#username")
+    @Transactional
     public void deleteUserByAdmin(String username) {
-        User user = getUserByUsername(username);
-        if (user.getRole() == com.gupta.linkly.entity.Role.ROLE_ADMIN) {
-            throw new IllegalArgumentException("Cannot delete an admin");
+        User user = getUser(username);
+        if (user.isAdmin()) {
+            throw new ForbiddenException("Cannot delete an admin");
         }
-        if (user.getLinks() != null) {
-            try {
-                for (com.gupta.linkly.entity.Link link : user.getLinks()) {
-                    stringRedisTemplate.delete("redirect:" + link.getShortUrl());
-                }
-            } catch (Exception e) {}
-        }
-        userRepository.delete(user);
+        deleteUserAndCaches(user);
     }
 
-    private User getUserByUsername(String username) {
+    private void deleteUserAndCaches(User user) {
+        evictUserCaches(user); // collect keys before the rows are gone
+        userRepository.hardDelete(user.getId());
+    }
+
+    private void evictUserCaches(User user) {
+        List<String> keys = new ArrayList<>(CacheKeys.redirects(linkRepository.findShortUrlsByUserId(user.getId())));
+        keys.add(CacheKeys.profile(user.getUsername()));
+        cache.evictAfterCommit(keys);
+    }
+
+    private void evictProfile(String username) {
+        cache.evictAfterCommit(List.of(CacheKeys.profile(username)));
+    }
+
+    private User getUser(String username) {
         return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found with username: " + username));
-    }
-
-    private UserProfileResponse mapToUserProfileResponse(User user) {
-        return UserProfileResponse.builder()
-                .id(user.getId())
-                .name(user.getName())
-                .username(user.getUsername())
-                .email(user.getEmail())
-                .bio(user.getBio())
-                .role(user.getRole())
-                .isSuspended(user.getIsSuspended())
-                .build();
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 }

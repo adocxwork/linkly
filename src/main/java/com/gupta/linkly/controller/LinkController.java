@@ -1,10 +1,8 @@
 package com.gupta.linkly.controller;
 
-import com.gupta.linkly.dto.DashboardResponse;
-import com.gupta.linkly.dto.LinkRequest;
-import com.gupta.linkly.dto.LinkResponse;
-import com.gupta.linkly.dto.ReorderRequest;
+import com.gupta.linkly.dto.*;
 import com.gupta.linkly.service.LinkService;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -15,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
+@Tag(name = "Links")
 @RestController
 @RequestMapping("/api/links")
 @RequiredArgsConstructor
@@ -23,55 +22,40 @@ public class LinkController {
     private final LinkService linkService;
 
     @PostMapping
-    public ResponseEntity<LinkResponse> addLink(
-            Authentication authentication,
-            @Valid @RequestBody LinkRequest request
-    ) {
-        return new ResponseEntity<>(linkService.addLink(authentication.getName(), request), HttpStatus.CREATED);
+    @ResponseStatus(HttpStatus.CREATED)
+    public LinkResponse addLink(Authentication auth, @Valid @RequestBody LinkRequest request) {
+        return linkService.addLink(auth.getName(), request);
     }
 
     @GetMapping
-    public ResponseEntity<List<LinkResponse>> getAllLinks(Authentication authentication) {
-        return ResponseEntity.ok(linkService.getAllLinks(authentication.getName()));
+    public List<LinkResponse> getAllLinks(Authentication auth) {
+        return linkService.getAllLinks(auth.getName());
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<LinkResponse> updateLink(
-            Authentication authentication,
-            @PathVariable UUID id,
-            @Valid @RequestBody LinkRequest request
-    ) {
-        return ResponseEntity.ok(linkService.updateLink(authentication.getName(), id, request));
+    public LinkResponse updateLink(Authentication auth, @PathVariable UUID id, @Valid @RequestBody LinkRequest request) {
+        return linkService.updateLink(auth.getName(), id, request);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteLink(
-            Authentication authentication,
-            @PathVariable UUID id
-    ) {
-        linkService.deleteLink(authentication.getName(), id);
+    public ResponseEntity<Void> deleteLink(Authentication auth, @PathVariable UUID id) {
+        linkService.deleteLink(auth.getName(), id);
         return ResponseEntity.noContent().build();
     }
 
     @PutMapping("/reorder")
-    public ResponseEntity<Void> reorderLinks(
-            Authentication authentication,
-            @RequestBody ReorderRequest request
-    ) {
-        linkService.reorderLinks(authentication.getName(), request.getLinkIds());
-        return ResponseEntity.ok().build();
+    public ResponseEntity<Void> reorderLinks(Authentication auth, @Valid @RequestBody ReorderRequest request) {
+        linkService.reorderLinks(auth.getName(), request.getLinkIds());
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/dashboard")
-    public ResponseEntity<DashboardResponse> getDashboard(Authentication authentication) {
-        return ResponseEntity.ok(linkService.getDashboard(authentication.getName()));
+    public DashboardResponse getDashboard(Authentication auth) {
+        return linkService.getDashboard(auth.getName());
     }
 
     @GetMapping("/{id}/analytics")
-    public ResponseEntity<com.gupta.linkly.dto.AnalyticsResponse> getLinkAnalytics(
-            Authentication authentication,
-            @PathVariable UUID id
-    ) {
-        return ResponseEntity.ok(linkService.getLinkAnalytics(authentication.getName(), id));
+    public AnalyticsResponse getLinkAnalytics(Authentication auth, @PathVariable UUID id) {
+        return linkService.getLinkAnalytics(auth.getName(), id);
     }
 }

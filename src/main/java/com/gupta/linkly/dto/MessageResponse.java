@@ -1,5 +1,6 @@
 package com.gupta.linkly.dto;
 
+import com.gupta.linkly.entity.Message;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -17,4 +18,8 @@ public class MessageResponse {
     private String senderName;
     private String content;
     private LocalDateTime createdAt;
+
+    public static MessageResponse from(Message message) {
+        return new MessageResponse(message.getId(), message.getSenderName(), message.getContent(), message.getCreatedAt());
+    }
 }

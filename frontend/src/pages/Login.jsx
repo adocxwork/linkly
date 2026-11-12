@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import api from '../api';
+import api, { errorMessage, saveSession } from '../api';
 
 const Login = () => {
   const [identifier, setIdentifier] = useState('');
@@ -13,45 +13,14 @@ const Login = () => {
     e.preventDefault();
     try {
       const { data } = await api.post('/auth/login', { identifier, password });
-      localStorage.setItem('user', JSON.stringify(data.user));
-      if (data.token) localStorage.setItem('token', data.token);
+      saveSession(data);
       if (data.user.role === 'ROLE_ADMIN') {
         navigate('/admin');
       } else {
         navigate('/dashboard');
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed');
-    }
-  };
-
-  const [keepAlive, setKeepAlive] = React.useState(false);
-  const [loadingStatus, setLoadingStatus] = React.useState(true);
-  const [toggleLoading, setToggleLoading] = React.useState(false);
-
-  React.useEffect(() => {
-    const fetchKeepAlive = async () => {
-      try {
-        const { data } = await api.get('/system/keep-alive');
-        setKeepAlive(data.enabled);
-      } catch (err) {
-        console.error("Failed to fetch keep-alive status", err);
-      } finally {
-        setLoadingStatus(false);
-      }
-    };
-    fetchKeepAlive();
-  }, []);
-
-  const handleToggleKeepAlive = async () => {
-    setToggleLoading(true);
-    try {
-      const { data } = await api.post('/system/keep-alive', { enabled: !keepAlive });
-      setKeepAlive(data.enabled);
-    } catch (err) {
-      console.error("Failed to toggle keep-alive", err);
-    } finally {
-      setToggleLoading(false);
+      setError(errorMessage(err, 'Login failed'));
     }
   };
 
@@ -63,9 +32,6 @@ const Login = () => {
       style={{ maxWidth: '400px', margin: '4rem auto', position: 'relative' }}
     >
       <h2 className="text-center mb-6">Welcome Back</h2>
-      
-
-
       {error && <div className="toast error mb-4 text-center">{error}</div>}
       <form onSubmit={handleLogin}>
         <div className="form-group">

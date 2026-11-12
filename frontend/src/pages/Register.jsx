@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import api from '../api';
+import api, { errorMessage, saveSession } from '../api';
 
 const Register = () => {
   const [name, setName] = useState('');
@@ -26,11 +26,10 @@ const Register = () => {
         enableUpiPayment,
         enablePublicMessaging
       });
-      localStorage.setItem('user', JSON.stringify(data.user));
-      if (data.token) localStorage.setItem('token', data.token);
+      saveSession(data);
       navigate('/dashboard');
     } catch (err) {
-      setError(err.response?.data?.message || 'Registration failed');
+      setError(errorMessage(err, 'Registration failed'));
     }
   };
 
@@ -81,7 +80,9 @@ const Register = () => {
               className="form-control"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Create a password"
+              placeholder="At least 8 characters"
+              minLength={8}
+              maxLength={72}
               required 
             />
           </div>

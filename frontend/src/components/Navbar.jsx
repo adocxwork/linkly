@@ -1,17 +1,13 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Link2, LogOut, Settings, LayoutDashboard, Shield, Menu, X, User, Mail } from 'lucide-react';
-import api from '../api';
 
 const Navbar = () => {
   const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const user = JSON.parse(localStorage.getItem('user') || 'null');
 
-  const handleLogout = async () => {
-    try {
-      await api.post('/auth/logout');
-    } catch (e) {}
+  const handleLogout = () => {
     localStorage.removeItem('user');
     localStorage.removeItem('token');
     navigate('/login');

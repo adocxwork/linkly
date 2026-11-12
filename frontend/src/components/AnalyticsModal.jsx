@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import api from '../api';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+import api, { errorMessage } from '../api';
 
 const COLORS = ['#0071e3', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 const AnalyticsModal = ({ link, onClose }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const fetchAnalytics = async () => {
@@ -15,7 +16,7 @@ const AnalyticsModal = ({ link, onClose }) => {
         const res = await api.get(`/links/${link.id}/analytics`);
         setData(res.data);
       } catch (err) {
-        console.error("Failed to load analytics", err);
+        setError(errorMessage(err, 'Failed to load analytics'));
       } finally {
         setLoading(false);
       }
@@ -24,7 +25,7 @@ const AnalyticsModal = ({ link, onClose }) => {
   }, [link.id]);
 
   const formatData = (obj) => {
-    return Object.keys(obj).map(key => ({
+    return Object.keys(obj || {}).map(key => ({
       name: key,
       value: obj[key]
     })).filter(item => item.value > 0);
@@ -50,9 +51,32 @@ const AnalyticsModal = ({ link, onClose }) => {
             <button onClick={onClose} className="btn btn-secondary">Close</button>
           </div>
 
-          {loading ? (
-            <p className="text-center text-secondary">Loading deep analytics...</p>
-          ) : (
+          {loading && <p className="text-center text-secondary">Loading analytics...</p>}
+          {!loading && error && <p className="text-center text-danger">{error}</p>}
+          {!loading && data && (
+            <>
+            <div className="flex gap-4 mb-6" style={{ flexWrap: 'wrap' }}>
+              <div className="card" style={{ flex: '1 1 140px', padding: '1rem' }}>
+                <div className="text-secondary" style={{ fontSize: '0.85rem' }}>Total clicks</div>
+                <h2 style={{ margin: 0 }}>{data.totalClicks}</h2>
+              </div>
+              <div className="card" style={{ flex: '1 1 140px', padding: '1rem' }}>
+                <div className="text-secondary" style={{ fontSize: '0.85rem' }}>Unique visitors</div>
+                <h2 style={{ margin: 0 }}>{data.uniqueVisitors}</h2>
+              </div>
+            </div>
+            <h4 className="mb-4">Clicks over the last 30 days</h4>
+            <div style={{ height: '200px', marginBottom: '2rem' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={(data.clicksOverTime || []).map(d => ({ day: d.date.slice(5), clicks: d.clicks }))}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
+                  <XAxis dataKey="day" tick={{ fontSize: 11 }} interval={4} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={30} />
+                  <Tooltip />
+                  <Bar dataKey="clicks" fill="#0071e3" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '2rem' }}>
               
               <div>
@@ -107,6 +131,7 @@ const AnalyticsModal = ({ link, onClose }) => {
               </div>
 
             </div>
+            </>
           )}
         </motion.div>
       </div>

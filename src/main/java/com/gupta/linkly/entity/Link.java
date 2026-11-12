@@ -27,6 +27,7 @@ public class Link {
     @Column(nullable = false, length = 2048)
     private String originalUrl;
 
+    /** The short code used in /r/{shortUrl}. Unique across all users. */
     @Column(nullable = false, unique = true)
     private String shortUrl;
 
@@ -34,6 +35,7 @@ public class Link {
     @Column(nullable = false)
     private Boolean active = true;
 
+    /** Denormalised counter, incremented in batches by the analytics pipeline. */
     @Builder.Default
     @Column(nullable = false)
     private Long clickCount = 0L;
@@ -45,10 +47,6 @@ public class Link {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
-
-    @OneToMany(mappedBy = "link", cascade = CascadeType.ALL, orphanRemoval = true)
-    @Builder.Default
-    private java.util.List<ClickAnalytics> clickAnalytics = new java.util.ArrayList<>();
 
     @CreationTimestamp
     @Column(updatable = false)

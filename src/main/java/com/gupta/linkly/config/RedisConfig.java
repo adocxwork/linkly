@@ -1,71 +1,80 @@
 package com.gupta.linkly.config;
 
+import io.lettuce.core.ClientOptions;
+import io.lettuce.core.SocketOptions;
+import io.lettuce.core.TimeoutOptions;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.redis.connection.RedisConnectionFactory;
-import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.serializer.RedisSerializer;
-import org.springframework.data.redis.serializer.StringRedisSerializer;
-import org.springframework.data.redis.cache.RedisCacheConfiguration;
-import org.springframework.data.redis.cache.RedisCacheManager;
-import org.springframework.data.redis.serializer.RedisSerializationContext;
+import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
+import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+
+import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
+/**
+ * Builds the Redis connection ourselves instead of relying on spring.data.redis.url, because
+ * Spring Boot refuses to START when that URL is empty, and Redis must be optional.
+ *
+ * <ul>
+ *   <li>Empty REDIS_URL: a factory pointing at localhost is created but never used
+ *       (RedisGateway sees "not configured").</li>
+ *   <li>Connection is lazy: nothing connects at startup, so an unreachable Redis cannot block boot.</li>
+ *   <li>REJECT_COMMANDS while disconnected: commands fail immediately instead of queueing until
+ *       the timeout, so the fallback path kicks in fast.</li>
+ * </ul>
+ */
 @Configuration
 public class RedisConfig {
 
-    @Bean
-    public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory) {
-        RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()
-            .entryTtl(Duration.ofHours(1))
-            .serializeKeysWith(RedisSerializationContext.SerializationPair.fromSerializer(RedisSerializer.string()))
-            .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(RedisSerializer.json()));
-
-        return RedisCacheManager.builder(connectionFactory)
-            .cacheDefaults(config)
-            .build();
-    }
+    private static final Duration TIMEOUT = Duration.ofSeconds(2);
 
     @Bean
-    public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory) {
-        RedisTemplate<String, Object> template = new RedisTemplate<>();
-        template.setConnectionFactory(connectionFactory);
-        template.setKeySerializer(RedisSerializer.string());
-        template.setValueSerializer(RedisSerializer.json());
-        template.setHashKeySerializer(RedisSerializer.string());
-        template.setHashValueSerializer(RedisSerializer.json());
-        return template;
-    }
-
-    @Bean
-    public org.springframework.data.redis.stream.StreamMessageListenerContainer<String, org.springframework.data.redis.connection.stream.MapRecord<String, String, String>> streamMessageListenerContainer(
-            RedisConnectionFactory connectionFactory,
-            com.gupta.linkly.service.AnalyticsStreamConsumer streamConsumer) {
-
-        org.springframework.data.redis.stream.StreamMessageListenerContainer.StreamMessageListenerContainerOptions<String, org.springframework.data.redis.connection.stream.MapRecord<String, String, String>> options =
-                org.springframework.data.redis.stream.StreamMessageListenerContainer.StreamMessageListenerContainerOptions.builder()
-                        .pollTimeout(Duration.ofMillis(1000)) // Increased to 1000ms to reduce requests
-                        .errorHandler(t -> {
-                            System.err.println("Redis Stream Error: " + t.getMessage());
-                            try { Thread.sleep(5000); } catch (Exception e) {}
-                        })
-                        .build();
-
-        org.springframework.data.redis.stream.StreamMessageListenerContainer<String, org.springframework.data.redis.connection.stream.MapRecord<String, String, String>> container =
-                org.springframework.data.redis.stream.StreamMessageListenerContainer.create(connectionFactory, options);
-
-        try {
-            connectionFactory.getConnection().xGroupCreate("link-clicks-stream".getBytes(), "analytics-group", org.springframework.data.redis.connection.stream.ReadOffset.from("0-0"), true);
-        } catch (Exception e) {
-            // Group might already exist
+    public LettuceConnectionFactory redisConnectionFactory(@Value("${app.redis.url:}") String url) {
+        RedisStandaloneConfiguration server = new RedisStandaloneConfiguration();
+        boolean ssl = false;
+        if (url != null && !url.isBlank()) {
+            URI uri = URI.create(url.trim());
+            ssl = "rediss".equalsIgnoreCase(uri.getScheme());
+            server.setHostName(uri.getHost());
+            server.setPort(uri.getPort() > 0 ? uri.getPort() : 6379);
+            if (uri.getRawUserInfo() != null) {
+                String[] parts = uri.getRawUserInfo().split(":", 2);
+                if (parts.length == 2) {
+                    if (!parts[0].isEmpty()) {
+                        server.setUsername(decode(parts[0]));
+                    }
+                    server.setPassword(decode(parts[1]));
+                } else {
+                    server.setPassword(decode(parts[0]));
+                }
+            }
+            String path = uri.getPath();
+            if (path != null && path.length() > 1) {
+                server.setDatabase(Integer.parseInt(path.substring(1)));
+            }
         }
 
-        container.receive(
-                org.springframework.data.redis.connection.stream.Consumer.from("analytics-group", "consumer-1"),
-                org.springframework.data.redis.connection.stream.StreamOffset.create("link-clicks-stream", org.springframework.data.redis.connection.stream.ReadOffset.lastConsumed()),
-                streamConsumer);
+        ClientOptions clientOptions = ClientOptions.builder()
+                .autoReconnect(true)
+                .disconnectedBehavior(ClientOptions.DisconnectedBehavior.REJECT_COMMANDS)
+                .socketOptions(SocketOptions.builder().connectTimeout(TIMEOUT).build())
+                .timeoutOptions(TimeoutOptions.enabled(TIMEOUT))
+                .build();
+        LettuceClientConfiguration.LettuceClientConfigurationBuilder client = LettuceClientConfiguration.builder()
+                .commandTimeout(TIMEOUT)
+                .shutdownTimeout(Duration.ofMillis(200))
+                .clientOptions(clientOptions);
+        if (ssl) {
+            client.useSsl();
+        }
+        return new LettuceConnectionFactory(server, client.build());
+    }
 
-        container.start();
-        return container;
+    private static String decode(String value) {
+        return URLDecoder.decode(value, StandardCharsets.UTF_8);
     }
 }

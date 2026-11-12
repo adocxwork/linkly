@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+/** The single JSON error shape returned by every endpoint and filter. */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -17,4 +18,8 @@ public class ErrorResponse {
     private String error;
     private String message;
     private String path;
+
+    public static ErrorResponse of(int status, String error, String message, String path) {
+        return new ErrorResponse(LocalDateTime.now(), status, error, message, path);
+    }
 }

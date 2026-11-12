@@ -31,7 +31,7 @@ const Inbox = () => {
     try {
       await api.delete(`/messages/${id}`);
       setMessages(messages.filter(msg => msg.id !== id));
-    } catch (err) {
+    } catch {
       showError('Failed to delete message');
     }
   };

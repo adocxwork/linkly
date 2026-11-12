@@ -1,28 +1,20 @@
 #!/bin/bash
+# Starts backend (port 8080) and frontend (port 5173) for local development.
+# Backend settings are read from .env (copy .env.example to .env first).
 
-echo "🚀 Starting Linkly Services..."
-
-# Kill child processes if the script is terminated
 trap 'kill 0' SIGINT
 
-# Start the Spring Boot backend in the background
-echo "☕ Starting Spring Boot backend..."
+if [ -f .env ]; then
+  set -a; . ./.env; set +a
+else
+  echo "⚠️  No .env file found. Copy .env.example to .env and set JWT_SECRET at least."
+fi
+
+echo "☕ Starting Spring Boot backend on http://localhost:8080 ..."
 ./mvnw spring-boot:run &
-BACKEND_PID=$!
 
-# Wait a brief moment to let Maven start up
-sleep 2
+echo "⚛️  Starting React frontend on http://localhost:5173 ..."
+(cd frontend && npm run dev) &
 
-# Start the React frontend in the background
-echo "⚛️ Starting React frontend..."
-cd frontend || exit
-npm run dev &
-FRONTEND_PID=$!
-
-echo "✅ Both services are starting up!"
-echo "   - Backend: http://localhost:8080"
-echo "   - Frontend: http://localhost:5173"
-echo "Press Ctrl+C to stop both servers."
-
-# Wait indefinitely until interrupted
+echo "Press Ctrl+C to stop both."
 wait
