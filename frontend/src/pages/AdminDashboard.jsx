@@ -9,23 +9,23 @@ const AdminDashboard = () => {
   const [deleteModal, setDeleteModal] = useState({ show: false, username: null });
   const [errorMsg, setErrorMsg] = useState('');
 
-  useEffect(() => {
-    fetchUsers();
+  const showError = useCallback((msg) => {
+    setErrorMsg(msg);
+    setTimeout(() => setErrorMsg(''), 4000);
   }, []);
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       const res = await api.get('/admin/users');
       setUsers(res.data);
     } catch (err) {
       showError(errorMessage(err, 'Error fetching users'));
     }
-  };
+  }, [showError]);
 
-  const showError = useCallback((msg) => {
-    setErrorMsg(msg);
-    setTimeout(() => setErrorMsg(''), 4000);
-  }, []);
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
 
   const toggleSuspend = async (username) => {
     try {

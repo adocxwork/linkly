@@ -1,5 +1,7 @@
 # Linkly
 
+[![CI](https://github.com/adocxwork/linkly/actions/workflows/ci.yml/badge.svg)](https://github.com/adocxwork/linkly/actions/workflows/ci.yml)
+
 A link-in-bio and URL-shortener platform. Creators get a public page (`/p/{username}`) with their
 links, an optional UPI payment QR code and an anonymous message box. Every short link
 (`/r/{code}`) records click analytics: country, device, browser, unique visitors and a 30-day trend.

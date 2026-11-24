@@ -43,7 +43,7 @@ function App() {
             <Route path="/admin" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
             <Route path="/p/:username" element={<Profile />} />
             <Route path="/link-error" element={<ErrorPage />} />
-            <Route path="*" element={<ErrorPage />} />
+            <Route path="*" element={<ErrorPage variant="notFound" />} />
           </Routes>
         </Suspense>
       </div>

@@ -52,6 +52,7 @@ public class LinkService {
 
     @Transactional
     public LinkResponse addLink(String username, LinkRequest request) {
+        requireRedirectableUrl(request.getOriginalUrl());
         User user = getUser(username);
         if (linkRepository.countByUserId(user.getId()) >= maxLinksPerUser) {
             throw new BadRequestException("You can have at most " + maxLinksPerUser + " links");
@@ -90,6 +91,7 @@ public class LinkService {
 
     @Transactional
     public LinkResponse updateLink(String username, UUID linkId, LinkRequest request) {
+        requireRedirectableUrl(request.getOriginalUrl());
         Link link = getOwnedLink(linkId, username);
         link.setTitle(request.getTitle().trim());
         link.setOriginalUrl(request.getOriginalUrl().trim());
@@ -198,6 +200,21 @@ public class LinkService {
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /**
+     * Bean validation accepts some URLs that cannot be sent in an HTTP Location header
+     * (e.g. containing "|" or "^"). Reject them up front instead of failing at redirect time.
+     */
+    private static void requireRedirectableUrl(String url) {
+        try {
+            java.net.URI uri = new java.net.URI(url.trim());
+            if (uri.getHost() == null) {
+                throw new BadRequestException("URL must include a valid host name");
+            }
+        } catch (java.net.URISyntaxException e) {
+            throw new BadRequestException("URL contains characters that are not allowed; please encode them");
+        }
+    }
 
     private void evictProfile(String username) {
         cache.evictAfterCommit(List.of(CacheKeys.profile(username)));

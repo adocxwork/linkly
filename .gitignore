@@ -1,40 +1,50 @@
-HELP.md
+# ---------- Build output ----------
 target/
-.mvn/wrapper/maven-wrapper.jar
+build/
 !**/src/main/**/target/
 !**/src/test/**/target/
+!**/src/main/**/build/
+!**/src/test/**/build/
+.mvn/wrapper/maven-wrapper.jar
+HELP.md
 
-### STS ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
+# ---------- Secrets & local config (never commit) ----------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.dump
+*.sql.gz
 
-### IntelliJ IDEA ###
-.idea
+# ---------- IDEs / editors / AI tools ----------
+.idea/
 *.iws
 *.iml
 *.ipr
-
-### NetBeans ###
+.vscode/
+.settings/
+.project
+.classpath
+.factorypath
+.apt_generated
+.springBeans
+.sts4-cache
 /nbproject/private/
 /nbbuild/
 /dist/
 /nbdist/
 /.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
+.claude/
+.cursor/
+.windsurf/
+.gemini/
+.aider*
 
-### VS Code ###
-.vscode/
+# ---------- OS ----------
 .DS_Store
+Thumbs.db
 
-### Claude Code local files ###
-.claude/settings.local.json
-
-### Local secrets ###
-.env
+# ---------- Logs ----------
+logs/
+*.log

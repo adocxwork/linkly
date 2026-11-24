@@ -111,6 +111,14 @@ class LinkServiceTest {
     }
 
     @Test
+    void rejectsUrlsThatCannotBeRedirectedTo() {
+        LinkRequest bad = new LinkRequest("x", "https://example.com/a|b", true, null);
+        assertThatThrownBy(() -> linkService.addLink("alice", bad))
+                .isInstanceOf(com.gupta.linkly.exception.BadRequestException.class);
+        verifyNoInteractions(linkRepository);
+    }
+
+    @Test
     void cannotUpdateSomeoneElsesLink() {
         UUID id = UUID.randomUUID();
         when(linkRepository.findByIdAndUserUsername(id, "mallory")).thenReturn(Optional.empty());

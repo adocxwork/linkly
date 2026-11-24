@@ -15,8 +15,11 @@ WORKDIR /app
 RUN useradd --system --uid 1001 linkly
 COPY --from=build /app/target/linkly-0.0.1-SNAPSHOT.jar app.jar
 USER linkly
-# Render's free instance has 512 MB RAM: size the heap from the container limit,
-# use the low-overhead Serial GC and smaller thread stacks.
-ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70 -XX:+UseSerialGC -Xss512k -XX:+ExitOnOutOfMemoryError"
+# Tuned for Render's free instance (512 MB RAM, a fraction of one CPU):
+#  - heap sized from the container limit, low-overhead Serial GC, smaller thread stacks
+#  - TieredStopAtLevel=1: only the fast C1 JIT, so compilation doesn't starve startup of CPU
+#  - classic TLS key-exchange groups that every server (incl. Supabase's pooler) supports
+# NOTE: a JAVA_TOOL_OPTIONS variable set in the Render dashboard REPLACES this line.
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70 -XX:+UseSerialGC -Xss512k -XX:TieredStopAtLevel=1 -XX:+ExitOnOutOfMemoryError -Djdk.tls.namedGroups=x25519,secp256r1,secp384r1"
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]

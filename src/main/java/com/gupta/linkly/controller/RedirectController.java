@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.net.URI;
 
 /**
  * GET /r/{code} → 302 to the original URL.
@@ -40,8 +39,9 @@ public class RedirectController {
         } catch (ResourceNotFoundException e) {
             target = frontendUrl.replaceAll("/+$", "") + "/link-error";
         }
+        // Raw header (not URI.create) so an unusual legacy URL can never turn a redirect into a 500.
         return ResponseEntity.status(HttpStatus.FOUND)
-                .location(URI.create(target))
+                .header(HttpHeaders.LOCATION, target)
                 .header(HttpHeaders.CACHE_CONTROL, "no-store")
                 .build();
     }

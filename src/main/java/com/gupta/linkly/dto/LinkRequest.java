@@ -19,7 +19,7 @@ public class LinkRequest {
 
     @NotBlank(message = "Original URL is required")
     @Size(max = 2048, message = "URL must be at most 2048 characters")
-    @Pattern(regexp = ValidationPatterns.HTTP_URL, message = "URL must start with http:// or https://")
+    @Pattern(regexp = ValidationPatterns.HTTP_URL, message = "URL must start with http:// or https:// and contain no spaces")
     @URL(message = "Must be a valid URL (e.g. https://example.com)")
     private String originalUrl;
 
