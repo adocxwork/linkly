@@ -10,12 +10,14 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Admin-controlled runtime switches (self-ping, Redis on/off).
  *
  * <p>The values live in the system_settings table so they survive restarts, and are cached in
- * memory so hot paths (every redirect checks whether Redis is enabled) never hit the database.
+ * memory so checking the Redis switch adds no database query.
  * A periodic refresh keeps several instances in sync if the app is ever scaled out.
  */
 @Slf4j
@@ -40,7 +42,7 @@ public class SystemSettingsService {
     public void refresh() {
         try {
             SystemSettings settings = repository.findById(SystemSettings.DEFAULT_ID).orElseGet(SystemSettings::defaults);
-            apply(settings);
+            apply(new Snapshot(settings.isKeepAliveEnabled(), settings.isRedisEnabled()));
         } catch (RuntimeException e) {
             log.warn("Could not load system settings, keeping current values: {}", e.getMessage());
         }
@@ -48,7 +50,7 @@ public class SystemSettingsService {
 
     @Transactional
     public Snapshot update(Boolean keepAliveEnabled, Boolean redisEnabled) {
-        SystemSettings settings = repository.findById(SystemSettings.DEFAULT_ID).orElseGet(SystemSettings::defaults);
+        SystemSettings settings = repository.findDefaultForUpdate().orElseGet(SystemSettings::defaults);
         if (keepAliveEnabled != null) {
             settings.setKeepAliveEnabled(keepAliveEnabled);
         }
@@ -56,13 +58,19 @@ public class SystemSettingsService {
             settings.setRedisEnabled(redisEnabled);
         }
         repository.save(settings);
-        apply(settings);
-        log.info("System settings updated: keepAlive={}, redis={}", settings.isKeepAliveEnabled(), settings.isRedisEnabled());
-        return current;
+        Snapshot updated = new Snapshot(settings.isKeepAliveEnabled(), settings.isRedisEnabled());
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                apply(updated);
+                log.info("System settings updated: keepAlive={}, redis={}", updated.keepAliveEnabled(), updated.redisEnabled());
+            }
+        });
+        return updated;
     }
 
-    private void apply(SystemSettings settings) {
-        current = new Snapshot(settings.isKeepAliveEnabled(), settings.isRedisEnabled());
-        redisGateway.setEnabled(settings.isRedisEnabled());
+    private void apply(Snapshot updated) {
+        redisGateway.setEnabled(updated.redisEnabled());
+        current = updated;
     }
 }

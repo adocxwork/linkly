@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import QRCode from 'react-qr-code';
-import api, { shortLinkUrl } from '../api';
+import api, { errorMessage, shortLinkUrl } from '../api';
 
-const Profile = () => {
-  const { username } = useParams();
+const Profile = ({ username }) => {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState(null);
+  const [sending, setSending] = useState(false);
+  const sendingMessage = useRef(false);
   
   const [messageName, setMessageName] = useState('');
   const [messageContent, setMessageContent] = useState('');
@@ -16,17 +17,16 @@ const Profile = () => {
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const { data } = await api.get(`/public/u/${username}`);
-        setProfile(data);
-      } catch {
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchProfile();
+    const controller = new AbortController();
+    api.get(`/public/u/${encodeURIComponent(username)}`, { signal: controller.signal })
+      .then(({ data }) => setProfile(data))
+      .catch((err) => {
+        if (!controller.signal.aborted) setError(err);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
   }, [username]);
 
   const showError = (msg) => {
@@ -36,8 +36,11 @@ const Profile = () => {
 
   const handleMessageSubmit = async (e) => {
     e.preventDefault();
+    if (sendingMessage.current) return;
+    sendingMessage.current = true;
+    setSending(true);
     try {
-      await api.post(`/public/u/${username}/messages`, {
+      await api.post(`/public/u/${encodeURIComponent(username)}/messages`, {
         senderName: messageName || 'Anonymous',
         content: messageContent
       });
@@ -46,7 +49,10 @@ const Profile = () => {
       setMessageContent('');
       setTimeout(() => setMessageSuccess(false), 3000);
     } catch (err) {
-      showError(err.response?.data?.message || 'Failed to send message.');
+      showError(errorMessage(err, 'Failed to send message.'));
+    } finally {
+      sendingMessage.current = false;
+      setSending(false);
     }
   };
 
@@ -65,10 +71,11 @@ const Profile = () => {
   }
 
   if (error || !profile) {
+    const missing = error?.response?.status === 404;
     return (
       <div className="card glass text-center" style={{ maxWidth: '400px', margin: '4rem auto' }}>
-        <h2 className="mb-4">User Not Found</h2>
-        <p className="text-secondary mb-6">The profile you are looking for does not exist or has been suspended.</p>
+        <h2 className="mb-4">{missing ? 'User not found' : 'Profile unavailable'}</h2>
+        <p className="text-secondary mb-6">{missing ? 'This profile may have been removed or suspended.' : errorMessage(error, 'Please try reloading the page.')}</p>
         <Link to="/" className="btn btn-primary">Go Home</Link>
       </div>
     );
@@ -180,7 +187,9 @@ const Profile = () => {
                     style={{ background: 'var(--surface-solid)', color: 'var(--text-primary)', borderColor: 'var(--border-color)' }}
                   />
                 </div>
-                <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '12px' }}>Send Message</button>
+                <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '12px' }} disabled={sending}>
+                  {sending ? 'Sending…' : 'Send Message'}
+                </button>
               </form>
             )}
           </div>

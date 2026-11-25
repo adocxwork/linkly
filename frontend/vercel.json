@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/actuator/health/readiness",
+      "destination": "https://linkly-amwf.onrender.com/actuator/health/readiness"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "https://linkly-amwf.onrender.com/api/$1"
     },

@@ -8,7 +8,6 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
-import java.util.Locale;
 import java.util.Optional;
 
 @Service
@@ -31,10 +30,8 @@ public class CustomUserDetailsService implements UserDetailsService {
         }
         String value = identifier.trim();
         if (value.contains("@")) {
-            // New emails are stored lower-case; older rows may not be.
-            return userRepository.findByEmail(value.toLowerCase(Locale.ROOT))
-                    .or(() -> userRepository.findByEmail(value));
+            return userRepository.findByEmailIgnoreCase(value);
         }
-        return userRepository.findByUsername(value);
+        return userRepository.findByUsernameIgnoreCase(value);
     }
 }

@@ -10,15 +10,7 @@ import org.springframework.web.client.RestClient;
 
 import java.time.Instant;
 
-/**
- * Optional self-ping that stops Render's free tier from putting the service to sleep after
- * 15 minutes without traffic. It calls the public /actuator/health URL, which goes out through
- * Render's load balancer and therefore counts as inbound traffic, and also runs a database check
- * which keeps a free Supabase project active.
- *
- * <p>Limitation: a sleeping service cannot wake itself. An external pinger (e.g. cron-job.org)
- * is more robust; this switch exists so it can be managed from the admin dashboard.
- */
+/** Optional self-ping. It runs only while the service is awake. */
 @Slf4j
 @Service
 public class KeepAliveService {

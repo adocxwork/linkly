@@ -1,5 +1,6 @@
 package com.gupta.linkly.controller;
 
+import com.gupta.linkly.exception.BadRequestException;
 import com.gupta.linkly.exception.ResourceNotFoundException;
 import com.gupta.linkly.service.LinkService;
 import com.gupta.linkly.web.ClientIpResolver;
@@ -35,11 +36,11 @@ public class RedirectController {
     public ResponseEntity<Void> redirect(@PathVariable String shortUrl, HttpServletRequest request) {
         String target;
         try {
-            target = linkService.resolveRedirect(shortUrl, clientIpResolver.resolve(request), request.getHeader(HttpHeaders.USER_AGENT));
-        } catch (ResourceNotFoundException e) {
+            target = linkService.resolveRedirect(shortUrl, clientIpResolver.resolve(request), request.getHeader(HttpHeaders.USER_AGENT),
+                    "GET".equals(request.getMethod()));
+        } catch (ResourceNotFoundException | BadRequestException e) {
             target = frontendUrl.replaceAll("/+$", "") + "/link-error";
         }
-        // Raw header (not URI.create) so an unusual legacy URL can never turn a redirect into a 500.
         return ResponseEntity.status(HttpStatus.FOUND)
                 .header(HttpHeaders.LOCATION, target)
                 .header(HttpHeaders.CACHE_CONTROL, "no-store")

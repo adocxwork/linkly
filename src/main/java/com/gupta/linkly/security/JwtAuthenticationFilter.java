@@ -16,7 +16,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Authenticates requests carrying {@code Authorization: Bearer <jwt>}.
@@ -34,7 +36,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
     private final UserRepository userRepository;
-    private final SecurityErrorWriter errorWriter;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -45,21 +46,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        Claims claims;
+        UUID userId;
+        int tokenVersion;
         try {
-            claims = jwtUtil.parse(header.substring(7).trim());
+            Claims claims = jwtUtil.parse(header.substring(7).trim());
+            userId = UUID.fromString(Objects.toString(claims.getSubject(), ""));
+            tokenVersion = JwtUtil.tokenVersion(claims);
         } catch (JwtException | IllegalArgumentException e) {
             chain.doFilter(request, response);
             return;
         }
 
-        Optional<User> user = userRepository.findByUsername(claims.getSubject());
-        if (user.isEmpty() || JwtUtil.tokenVersion(claims) != user.get().getTokenVersion()) {
+        Optional<User> user = userRepository.findById(userId);
+        if (user.isEmpty() || user.get().suspended() || tokenVersion != user.get().getTokenVersion()) {
             chain.doFilter(request, response); // deleted user, or token revoked
-            return;
-        }
-        if (user.get().suspended()) {
-            errorWriter.write(request, response, HttpServletResponse.SC_UNAUTHORIZED, "Your account has been suspended");
             return;
         }
 

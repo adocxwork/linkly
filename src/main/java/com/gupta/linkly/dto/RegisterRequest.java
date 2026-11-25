@@ -27,11 +27,12 @@ public class RegisterRequest {
     @Size(max = 254, message = "Email is too long")
     private String email;
 
-    /** BCrypt only uses the first 72 bytes, hence the upper limit. */
+    /** The service also enforces BCrypt’s 72-byte limit for UTF-8. */
     @NotBlank(message = "Password is required")
     @Size(min = 8, max = 72, message = "Password must be between 8 and 72 characters")
     private String password;
 
+    @Size(max = 255, message = "UPI ID must be at most 255 characters")
     @Pattern(regexp = ValidationPatterns.UPI_ID_OR_EMPTY, message = "UPI ID must look like name@bank")
     private String upiId;
 

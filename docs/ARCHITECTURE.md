@@ -1,114 +1,52 @@
-# Linkly: how the backend works
+# Linkly backend interview guide
 
-A study guide to the code, organised the way an interviewer would ask about it.
+Linkly is one Spring Boot application with a React frontend. PostgreSQL stores accounts, links, inbox messages and analytics. Redis Streams carry click events, and a scheduled worker in the same application processes them. Flyway versions the schema.
 
-## 1. Package map
+## Follow the code
 
-| Package | Responsibility |
+| Flow | Read in this order |
 |---|---|
-| `controller` | HTTP endpoints only: validate input, call a service, return DTOs |
-| `service` | Business logic: auth, links, users, messages, short-code generation |
-| `analytics` | The click pipeline: publisher, stream worker, batch writer, Geo-IP, UA parsing, IP hashing |
-| `redis` | `RedisGateway` (the only class touching Redis, with a circuit breaker), JSON cache, key names |
-| `security` | JWT creation and validation, auth filter, rate-limit filter, Spring Security config |
-| `system` | Admin switches (`SystemSettingsService`), health report, self-ping, admin seeding |
-| `web` | `ClientIpResolver` (real client IP behind proxies) |
-| `entity` / `repository` / `dto` | JPA entities, Spring Data repositories, request and response objects |
-| `config` | Redis connection factory, OpenAPI |
-| `resources/db/migration` | Flyway SQL migrations: the single source of truth for the schema |
+| Sign in | `AuthController` → `AuthService` → Spring Security’s authentication manager → `CustomUserDetailsService` → `JwtUtil` |
+| Access a private link | `SecurityConfig` → `JwtAuthenticationFilter` → `LinkController` → `LinkService` → `LinkRepository` |
+| Open a short link | `RateLimitingFilter` → `RedirectController` → `LinkService.resolveRedirect` → `ClickEventPublisher` |
+| Record a click | `ClickStreamWorker` → `ClickProcessor` → optional `GeoIpService` → `ClickBatchWriter` |
+| Leave a message | `PublicController` → `MessageService` → `MessageRepository` |
 
-## 2. Request flows
+## The redirect and analytics path
 
-### Redirect: `GET /r/{code}` (the hot path)
-1. `RateLimitingFilter` checks the client IP's token bucket (120/min). Over the limit gives `429`.
-2. `RedirectController` resolves the client IP (`ClientIpResolver`) and calls `LinkService.resolveRedirect`.
-3. Cache-aside lookup: `redirect:v2:{code}` in Redis.
-   - Hit: no database access at all.
-   - Miss: one query (`findRedirectTarget`) that joins the owner to check "active" and "not suspended".
-     The result is cached for 1 hour.
-   - Redis down or disabled: the gateway returns "miss" immediately, so we go to the DB.
-4. `ClickEventPublisher.publish`: bots and link-preview fetchers are ignored. The event is added to
-   the Redis Stream with `XADD … MAXLEN ~ 10000`. If Redis is unavailable, it goes to the bounded
-   in-memory `LocalClickBuffer` instead.
-5. The response is `302 Found` with `Cache-Control: no-store`. It is not a 301, because browsers
-   cache 301s and would skip us, losing analytics and ignoring later edits to the link.
-6. Unknown, inactive or suspended links redirect to the frontend's `/link-error` page.
+1. Bucket4j applies a per-IP limit with Caffeine holding bounded, expiring buckets. On Render, `ClientIpResolver` uses the configured number of trusted hops counted from the right of `X-Forwarded-For`. Local runs default to the socket address.
+2. An indexed Postgres query joins the link and its owner. The link must be active and its owner must be unsuspended. Public profile reads also use PostgreSQL. The prior Redis cache could preserve suspended profiles or links after invalidation failed. The trade-off is a database round trip on every redirect.
+3. The application ignores recognizable crawlers and browser previews. A valid GET hands off an event with a UUID to a bounded executor and returns `302` with `Cache-Control: no-store`. HEAD resolves the URL without recording a click.
+4. The executor sends `XADD` to Redis. If publishing fails or the executor is saturated, it places the same event in the bounded local buffer. When both paths are full, counters expose dropped events. Both in-memory queues lose pending work on a process restart.
+5. Every two seconds the worker checks local work. It reads Redis after a publish signal and on a five-minute sweep. The fixed consumer name lets a replacement process on the same single-instance deployment reread pending entries. The consumer checks its pending list before fresh records.
+6. PostgreSQL inserts by event UUID with `ON CONFLICT DO NOTHING`. The same statement adds only newly inserted rows to each link’s counter. After commit the worker acknowledges Redis records. A timeout after commit can produce a replay without increasing the counter again. The Redis stream is length-limited, so a long outage can still result in trimmed events.
 
-### Click processing (background)
-`ClickStreamWorker.tick()` runs every 2 s on a scheduler thread:
-1. It drains up to 100 events from the in-memory buffer. If storing fails, they are put back.
-2. It reads the Redis Stream only if there is a reason to: an in-memory flag says "this instance
-   published", or the 5-minute sweep is due. That keeps idle Redis usage near zero, which matters on
-   Upstash's free quota.
-3. It reads through a consumer group: first its own **pending** records (`ID 0`, delivered earlier
-   but never acknowledged), then **new** ones (`ID >`).
-4. `ClickProcessor`: one batched Geo-IP HTTP call for all unique IPs (cached with Caffeine, paused
-   for 5 minutes after a failure). Then `ClickBatchWriter` stores everything in one transaction.
-5. `XACK` runs only after a successful commit (at-least-once delivery). On failure the records stay
-   pending and are retried on the next sweep. After 5 failures they are acknowledged and counted as
-   "dead-lettered".
+Valid events remain pending on database failures and retry with a delay. Malformed entries are acknowledged and counted, with no separate dead-letter stream. A persistent processing error can stall the consumer and requires operator investigation. The fallback queue also has limited capacity.
 
-### Authenticated API request
-1. `JwtAuthenticationFilter` reads `Authorization: Bearer …`, verifies the HMAC signature and
-   expiry, loads the user, and compares the token's `ver` claim with `users.token_version`.
-   - Mismatch (password changed, logged out everywhere, suspended): the request is treated as anonymous, giving `401`.
-   - Suspended user: `401` "Your account has been suspended".
-2. Spring Security's URL rules decide access: `/api/admin/**` needs `ROLE_ADMIN`, everything not
-   public needs authentication.
-3. Services look up resources *together with the owner* (`findByIdAndUserUsername`), so "not yours"
-   and "doesn't exist" both return `404`. Nobody can probe other users' IDs.
+## Authentication and data ownership
 
-## 3. Failure handling
+Login accepts an email or username case-insensitively. Passwords are BCrypt hashes, with a 72-byte UTF-8 limit. The JWT identifies an immutable user UUID and carries the account’s `token_version`. Spring checks the current account on protected requests. Password changes, suspension and global logout advance the version. UUIDs keep a token for a deleted account from identifying a later account that takes its username.
 
-| Failure | Effect | Why |
-|---|---|---|
-| Redis unreachable | Caches skipped, clicks go to the in-memory queue, `/admin` shows Redis DOWN | `RedisGateway` circuit breaker; Lettuce `REJECT_COMMANDS` fails fast instead of queueing |
-| `REDIS_URL` not set | App starts normally, runs without Redis | We build `LettuceConnectionFactory` ourselves; Spring Boot refuses an empty `spring.data.redis.url` |
-| Admin turns Redis off | Zero Redis calls from then on; persisted across restarts | `system_settings.redis_enabled`, cached in memory |
-| Upstash quota exhausted | Same as unreachable: breaker opens and fallbacks take over | All Redis errors trip the breaker |
-| Geo-IP API down | Clicks stored with country "Unknown"; lookups paused for 5 minutes | Third-party failures must not lose clicks |
-| DB down while processing clicks | Batch not acknowledged or re-queued; retried later | At-least-once |
-| DB down entirely | API returns 500; `/actuator/health` = DOWN; liveness stays UP (no restart loop) | PostgreSQL is the system of record and cannot be bypassed |
-| In-memory queue full | New clicks dropped and counted (`droppedBufferFull`) | Bounded memory beats crashing with an out-of-memory error |
-| Render instance asleep | First request takes about 50 s (cold start) | Free tier. Mitigated by the self-ping or an external pinger |
+The database has case-insensitive unique indexes, which protect concurrent registration even when both requests pass the application’s availability checks. Account and link ownership checks use service/repository queries, with administrative routes requiring `ROLE_ADMIN`. Update transactions lock the user row for account state changes and concurrent link creation/reordering. Link editing leaves the analytics counter to the writer.
 
-## 4. Data model
+The browser stores bearer tokens in local storage. Script execution on the frontend origin could access them. The current design uses database-backed revocation for the demo. A production session design would need its own threat model, cookie/CSRF or token-refresh decisions, and stronger recovery and abuse handling.
 
-```
-users ──< links ──< click_analytics
-  └────< messages
-system_settings (single row "DEFAULT")
-```
-- All foreign keys use `ON DELETE CASCADE`. Deleting a user is one SQL statement, and the database
-  removes their links, clicks and messages. The JPA entities deliberately do **not** map these
-  collections: a JPA cascade would load every child row into memory first.
-- `links.click_count` is a denormalised counter (fast dashboards). `click_analytics` holds the detail.
-- `click_analytics.ip_hash` is `HMAC-SHA256(secret, ip)`. That is enough to count unique visitors
-  without storing personal data.
-- Indexes: `links(user_id)`, `click_analytics(link_id, clicked_at)` for the per-link time series,
-  `messages(user_id, created_at)`.
+## Database and privacy
 
-### Migrations
-- `V1` builds the schema on a fresh database.
-- `V2` widens `click_count` to `bigint`.
-- `V3` is the reliability and security release: token versions, the Redis switch column, IP hashing,
-  cascading FKs and indexes. It is written defensively (`IF EXISTS`, `DO` blocks) because production
-  was originally built by Hibernate. Flyway **baselines** an existing database at V1 and then applies V2 and V3.
+- `users` owns `links` and `messages`, and `links` owns `click_analytics`. PostgreSQL foreign keys cascade deletions. Public profiles return only active public link fields.
+- The inbox sorts by `(created_at, id)` using a composite index, and older pages use that pair as a cursor. Analytics aggregates run in SQL and work grows as historical events accumulate.
+- A keyed IP hash supports approximate unique counts. Shared networks can collapse several people into one hash and dynamic IP addresses can split a visitor across hashes. Upstash can hold raw IP data in stream entries. Optional GeoJS enrichment receives raw IP addresses and keeps a local lookup cache. Treat the stream, logs, hashes and provider access as part of the privacy design.
+- Flyway V1–V4 establish the baseline, migrate analytics and enable RLS. V5 adds case-insensitive uniqueness, V6 fixes pre-Flyway nullable flags and V7 indexes inbox pagination. PostgreSQL session advisory locking lets V4 update Flyway’s history table while preserving the existing migration checksum.
 
-## 5. Trade-offs (likely interview questions)
+## Explain these trade-offs in an interview
 
-- **Why Redis Streams rather than Kafka or RabbitMQ?** Redis was already there for caching; Streams
-  provide consumer groups, acknowledgements and pending lists, which is enough for one consumer at
-  this scale. Kafka would add cost and operational weight for no benefit here.
-- **Why not write the click synchronously?** The redirect would then pay for a DB write plus a
-  third-party Geo-IP call. Queuing keeps redirects in single-digit milliseconds. The price is
-  eventual consistency: dashboards lag by a couple of seconds.
-- **Why cache-aside with short TTLs?** On writes we evict keys *after the transaction commits*. If
-  Redis was unreachable during an eviction, the TTL (10 min for profiles, 1 h for redirects) limits
-  how long stale data can survive.
-- **Why JWT version numbers?** Pure stateless JWTs cannot be revoked. One integer per user, checked
-  against the user row we load anyway, makes revocation possible at no extra cost.
-- **Why in-memory rate limiting?** There is one instance on Render, and Redis-backed buckets would
-  spend Upstash quota on every request. With several instances, buckets would move to Redis.
-- **Why the right-most `X-Forwarded-For` entry?** Each proxy appends what it saw. Entries to the left
-  of our own proxy are whatever the client sent, so they are forgeable.
+| Question | What to explain |
+|---|---|
+| Why an event UUID? | Redis delivery and acknowledgements can be retried. A primary key plus a transactional counter update makes the write safe to repeat. |
+| What happens if Redis is down? | Redirects still resolve from PostgreSQL. Analytics can use memory briefly and is eventually visible. A restart or full queue can lose events. |
+| Why keep a counter on `links`? | The dashboard can read counts without scanning all click rows. The event insert and increment must commit together. |
+| Why skip the redirect cache? | Disabling a link and suspending an account affect what can be served. Direct indexed reads honor committed changes without requiring invalidation to succeed. Measure latency before revisiting the design. |
+| Why use both readiness and liveness? | Liveness represents process health. Login checks readiness including PostgreSQL, so visitors can see when the app can accept credentials. |
+| What changes beyond a single instance? | Use unique consumer identities with pending-entry recovery, decide how to enforce distributed limits and measure throughput before introducing more components. |
+
+For practice, trace one click from the browser to the counter in a debugger. Then run the replay integration test, explain why the second write returns zero and describe when the system can still lose an event.

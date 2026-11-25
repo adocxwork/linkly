@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 
@@ -31,6 +32,18 @@ import java.time.Duration;
 public class RedisConfig {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(2);
+
+    @Bean
+    public ThreadPoolTaskExecutor clickPublishExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setThreadNamePrefix("click-publish-");
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(1);
+        executor.setQueueCapacity(1_000);
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(5);
+        return executor;
+    }
 
     @Bean
     public LettuceConnectionFactory redisConnectionFactory(@Value("${app.redis.url:}") String url) {

@@ -14,7 +14,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Background consumer for click events.
@@ -32,9 +31,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * <h3>Delivery guarantees (at-least-once)</h3>
  * Records are read through a consumer group and acknowledged (XACK) only after the database
  * transaction commits. If processing fails the records stay "pending" and are re-read next time
- * (we read our pending list with ID 0 before reading new records with ID &gt;). After
- * {@code max-delivery-attempts} failures a record is acknowledged and counted as dead-lettered so
- * one poison message cannot block the pipeline forever.
+ * (we read our pending list with ID 0 before reading new records with ID &gt;).
+ * Malformed records are acknowledged and counted. Database failures pause consumption briefly.
  */
 @Slf4j
 @Component
@@ -52,11 +50,12 @@ public class ClickStreamWorker {
     private final String consumerName;
     private final int batchSize;
     private final Duration sweepInterval;
-    private final int maxDeliveryAttempts;
+    private static final Duration RETRY_DELAY = Duration.ofSeconds(30);
 
     private volatile boolean groupReady = false;
     private volatile Instant nextSweepAt = Instant.EPOCH;
-    private final Map<RecordId, Integer> failedAttempts = new ConcurrentHashMap<>();
+    private Instant retryStreamAt = Instant.EPOCH;
+    private Instant retryLocalAt = Instant.EPOCH;
     private volatile Instant lastDbErrorLogAt = Instant.EPOCH;
 
     public ClickStreamWorker(RedisGateway redis, ClickEventPublisher publisher, LocalClickBuffer localBuffer,
@@ -64,8 +63,7 @@ public class ClickStreamWorker {
                              @Value("${app.analytics.consumer-group:analytics-group}") String group,
                              @Value("${app.analytics.consumer-name:linkly-consumer}") String consumerName,
                              @Value("${app.analytics.batch-size:100}") int batchSize,
-                             @Value("${app.analytics.sweep-interval:5m}") Duration sweepInterval,
-                             @Value("${app.analytics.max-delivery-attempts:5}") int maxDeliveryAttempts) {
+                             @Value("${app.analytics.sweep-interval:5m}") Duration sweepInterval) {
         this.redis = redis;
         this.publisher = publisher;
         this.localBuffer = localBuffer;
@@ -77,7 +75,6 @@ public class ClickStreamWorker {
         this.consumerName = consumerName;
         this.batchSize = batchSize;
         this.sweepInterval = sweepInterval;
-        this.maxDeliveryAttempts = maxDeliveryAttempts;
     }
 
     @Scheduled(initialDelay = 5_000, fixedDelayString = "${app.analytics.drain-interval-ms:2000}")
@@ -89,6 +86,9 @@ public class ClickStreamWorker {
     // ------------------------------------------------------------------ in-memory fallback queue
 
     void drainLocalBuffer() {
+        if (Instant.now().isBefore(retryLocalAt)) {
+            return;
+        }
         List<ClickEvent> batch = localBuffer.drain(batchSize);
         if (batch.isEmpty()) {
             return;
@@ -98,6 +98,7 @@ public class ClickStreamWorker {
         } catch (RuntimeException e) {
             int lost = localBuffer.requeue(batch);
             stats.getDroppedBufferFull().addAndGet(lost);
+            retryLocalAt = Instant.now().plus(RETRY_DELAY);
             onProcessingError("local buffer", e);
         }
     }
@@ -105,22 +106,29 @@ public class ClickStreamWorker {
     // ------------------------------------------------------------------ Redis Stream
 
     void drainStream() {
-        boolean newEvents = publisher.consumeNewEventsSignal();
-        boolean sweepDue = Instant.now().isAfter(nextSweepAt);
-        if (!(newEvents || sweepDue) || !redis.isAvailable()) {
+        Instant now = Instant.now();
+        if (now.isBefore(retryStreamAt) || !redis.isAvailable()) {
+            return;
+        }
+        boolean sweepDue = !now.isBefore(nextSweepAt);
+        if (!publisher.consumeNewEventsSignal() && !sweepDue) {
             return;
         }
         if (sweepDue) {
-            nextSweepAt = Instant.now().plus(sweepInterval);
+            nextSweepAt = now.plus(sweepInterval);
         }
         if (!ensureGroup()) {
+            publisher.signalMoreWork();
             return;
         }
-        // 1) our own pending records (delivered before but never acknowledged), then 2) new ones.
         int pending = processRecords(read(ReadOffset.from("0")));
+        if (pending < 0 || pending >= batchSize || !groupReady || !redis.isAvailable()) {
+            publisher.signalMoreWork();
+            return;
+        }
         int fresh = processRecords(read(ReadOffset.lastConsumed()));
-        if (pending >= batchSize || fresh >= batchSize) {
-            publisher.signalMoreWork(); // a full batch means there is probably more: continue next tick
+        if (fresh < 0 || fresh >= batchSize || !groupReady || !redis.isAvailable()) {
+            publisher.signalMoreWork();
         }
     }
 
@@ -132,7 +140,7 @@ public class ClickStreamWorker {
             try {
                 return createGroup(connection);
             } catch (RuntimeException e) {
-                if (String.valueOf(e.getMessage()).contains("BUSYGROUP")) {
+                if (redisErrorContains(e, "BUSYGROUP")) {
                     return "EXISTS"; // group already there: fine
                 }
                 throw e;
@@ -156,7 +164,7 @@ public class ClickStreamWorker {
                         StreamReadOptions.empty().count(batchSize),
                         StreamOffset.create(streamKey, offset));
             } catch (RuntimeException e) {
-                if (String.valueOf(e.getMessage()).contains("NOGROUP")) {
+                if (redisErrorContains(e, "NOGROUP")) {
                     groupReady = false; // stream/group was deleted (e.g. Redis flushed): recreate next time
                     return List.<MapRecord<String, Object, Object>>of();
                 }
@@ -175,43 +183,55 @@ public class ClickStreamWorker {
         for (MapRecord<String, Object, Object> record : records) {
             Object payload = record.getValue().get("payload");
             try {
-                events.add(jsonMapper.readValue(String.valueOf(payload), ClickEvent.class));
+                ClickEvent event = jsonMapper.readValue(String.valueOf(payload), ClickEvent.class);
+                if (event == null || event.linkId() == null) {
+                    malformed.add(record.getId());
+                    continue;
+                }
+                Long occurredAt = event.occurredAtMillis();
+                if (event.eventId() == null || occurredAt == null || occurredAt <= 0) {
+                    // Older deployments omitted the event ID and sometimes the timestamp.
+                    String legacyKey = streamKey + ":" + record.getId().getValue();
+                    UUID id = event.eventId() == null
+                            ? UUID.nameUUIDFromBytes(legacyKey.getBytes(StandardCharsets.UTF_8)) : event.eventId();
+                    long timestamp = occurredAt != null && occurredAt > 0 ? occurredAt
+                            : Long.parseLong(record.getId().getValue().split("-", 2)[0]);
+                    event = new ClickEvent(id, event.linkId(), event.ip(), event.userAgent(), timestamp);
+                }
+                events.add(event);
                 ids.add(record.getId());
             } catch (RuntimeException e) {
-                malformed.add(record.getId()); // can never succeed: acknowledge and move on
+                malformed.add(record.getId());
             }
         }
-        if (!malformed.isEmpty()) {
-            stats.getDeadLettered().addAndGet(malformed.size());
-            acknowledge(malformed);
+        if (!malformed.isEmpty() && !acknowledge(malformed)) {
+            return -1;
         }
+        stats.getDeadLettered().addAndGet(malformed.size());
         if (ids.isEmpty()) {
             return records.size();
         }
         try {
             processor.process(events);
-            acknowledge(ids);
-            ids.forEach(failedAttempts::remove);
         } catch (RuntimeException e) {
             onProcessingError("stream", e);
-            List<RecordId> giveUp = new ArrayList<>();
-            for (RecordId id : ids) {
-                if (failedAttempts.merge(id, 1, Integer::sum) >= maxDeliveryAttempts) {
-                    giveUp.add(id);
-                    failedAttempts.remove(id);
-                }
-            }
-            if (!giveUp.isEmpty()) {
-                log.error("Dead-lettering {} click events after {} failed attempts", giveUp.size(), maxDeliveryAttempts);
-                stats.getDeadLettered().addAndGet(giveUp.size());
-                acknowledge(giveUp);
-            }
+            retryStreamAt = Instant.now().plus(RETRY_DELAY);
+            return -1;
         }
-        return records.size();
+        return acknowledge(ids) ? records.size() : -1;
     }
 
-    private void acknowledge(List<RecordId> ids) {
-        redis.run("XACK", t -> t.opsForStream().acknowledge(streamKey, group, ids.toArray(RecordId[]::new)));
+    private boolean acknowledge(List<RecordId> ids) {
+        return redis.execute("XACK", t -> t.opsForStream().acknowledge(streamKey, group, ids.toArray(RecordId[]::new))).isPresent();
+    }
+
+    private static boolean redisErrorContains(Throwable error, String marker) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (String.valueOf(cause.getMessage()).contains(marker)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void onProcessingError(String source, RuntimeException e) {

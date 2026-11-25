@@ -30,6 +30,7 @@ public class ChangeSettingsRequest {
     @Pattern(regexp = "^$|^.{8,72}$", message = "New password must be between 8 and 72 characters")
     private String newPassword;
 
+    @Size(max = 255, message = "UPI ID must be at most 255 characters")
     @Pattern(regexp = ValidationPatterns.UPI_ID_OR_EMPTY, message = "UPI ID must look like name@bank")
     private String upiId;
 

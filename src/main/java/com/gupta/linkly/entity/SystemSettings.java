@@ -22,7 +22,7 @@ public class SystemSettings {
     @Column(name = "keep_alive_enabled", nullable = false)
     private boolean keepAliveEnabled;
 
-    /** When false the app never talks to Redis: caches are skipped, clicks use the local queue. */
+    /** When false, clicks use the local queue. */
     @Builder.Default
     @Column(name = "redis_enabled", nullable = false)
     private boolean redisEnabled = true;

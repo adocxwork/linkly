@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '';
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL || '').replace(/\/+$/, '');
+
+export const readinessUrl = BACKEND_URL + '/actuator/health/readiness';
 
 const api = axios.create({
   baseURL: `${BACKEND_URL}/api`,
@@ -10,7 +12,7 @@ const api = axios.create({
 // Attach the JWT (stored after login/register) to every request.
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
-  if (token) {
+  if (token && !config.url.startsWith('/auth/') && !config.url.startsWith('/public/')) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;

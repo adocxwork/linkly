@@ -11,6 +11,9 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+
 /**
  * Creates the admin account on first start, only if ADMIN_PASSWORD is provided. (The old code
  * generated a random password nobody could ever see, leaving the admin locked out.)
@@ -37,18 +40,19 @@ public class AdminSeeder implements ApplicationRunner {
             if (userRepository.existsByRole(Role.ROLE_ADMIN)) {
                 return;
             }
-            if (password == null || password.length() < 8) {
-                log.warn("No admin account exists. Set ADMIN_PASSWORD (min 8 chars) and restart to create one.");
+            if (password == null || password.isBlank() || password.length() < 8
+                    || password.getBytes(StandardCharsets.UTF_8).length > 72) {
+                log.warn("No admin account exists. Set ADMIN_PASSWORD (8 characters minimum, 72 UTF-8 bytes maximum) and restart to create one.");
                 return;
             }
-            if (userRepository.findByUsername(username).isPresent()) {
+            if (userRepository.existsByUsernameIgnoreCase(username)) {
                 log.warn("Cannot seed admin: username '{}' is already used by a normal account.", username);
                 return;
             }
             userRepository.save(User.builder()
                     .name("Admin")
                     .username(username)
-                    .email(email.toLowerCase())
+                    .email(email.trim().toLowerCase(Locale.ROOT))
                     .password(passwordEncoder.encode(password))
                     .role(Role.ROLE_ADMIN)
                     .build());

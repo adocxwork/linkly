@@ -125,7 +125,7 @@ public class SystemHealthService {
         details.put("publishedToLocalBuffer", stats.getPublishedToLocalBuffer().get());
         details.put("processed", stats.getProcessed().get());
         details.put("botClicksIgnored", stats.getBotClicksIgnored().get());
-        details.put("skippedDeletedLinks", stats.getSkippedDeletedLinks().get());
+        details.put("skippedEvents", stats.getSkippedEvents().get());
         details.put("droppedBufferFull", stats.getDroppedBufferFull().get());
         details.put("deadLettered", stats.getDeadLettered().get());
         details.put("lastProcessedAt", stats.getLastProcessedAt());

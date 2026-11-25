@@ -3,6 +3,7 @@ package com.gupta.linkly.analytics;
 import com.gupta.linkly.redis.RedisGateway;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.core.StreamOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import tools.jackson.databind.json.JsonMapper;
@@ -28,11 +29,13 @@ class ClickEventPublisherTest {
     private ClickEventPublisher publisher(boolean redisConfigured) {
         when(template.opsForStream()).thenReturn(stream);
         RedisGateway gateway = new RedisGateway(template, redisConfigured, Duration.ofSeconds(30), Clock.systemUTC());
-        return new ClickEventPublisher(gateway, buffer, stats, JsonMapper.builder().build(), "clicks", 1000);
+        return new ClickEventPublisher(gateway, buffer, stats, JsonMapper.builder().build(), "clicks", 1000, Runnable::run);
     }
 
     @Test
     void publishesToRedisStreamWhenAvailable() {
+        when(stream.add(any(org.springframework.data.redis.connection.stream.MapRecord.class), any()))
+                .thenReturn(RecordId.of("1-0"));
         ClickEventPublisher publisher = publisher(true);
         publisher.publish(UUID.randomUUID(), "8.8.8.8", BROWSER);
 

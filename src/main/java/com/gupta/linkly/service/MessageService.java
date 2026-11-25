@@ -13,6 +13,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -28,7 +29,7 @@ public class MessageService {
 
     @Transactional
     public void saveMessage(String username, MessageRequest request) {
-        User user = userRepository.findByUsername(username)
+        User user = userRepository.findByUsernameForUpdate(username)
                 .filter(u -> !u.suspended())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         if (!Boolean.TRUE.equals(user.getEnablePublicMessaging())) {
@@ -42,10 +43,17 @@ public class MessageService {
                 .build());
     }
 
-    public List<MessageResponse> getUserMessages(String username) {
+    public List<MessageResponse> getUserMessages(String username, LocalDateTime before, UUID beforeId) {
+        if ((before == null) != (beforeId == null)) {
+            throw new BadRequestException("Supply both inbox cursor fields");
+        }
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        return messageRepository.findByUserIdOrderByCreatedAtDesc(user.getId(), PageRequest.of(0, INBOX_LIMIT)).stream()
+        PageRequest first = PageRequest.of(0, INBOX_LIMIT);
+        List<Message> messages = before == null
+                ? messageRepository.findByUserIdOrderByCreatedAtDescIdDesc(user.getId(), first)
+                : messageRepository.findOlder(user.getId(), before, beforeId, first);
+        return messages.stream()
                 .map(MessageResponse::from)
                 .toList();
     }

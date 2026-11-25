@@ -14,7 +14,7 @@ public class PipelineStats {
     private final AtomicLong publishedToStream = new AtomicLong();
     private final AtomicLong publishedToLocalBuffer = new AtomicLong();
     private final AtomicLong processed = new AtomicLong();
-    private final AtomicLong skippedDeletedLinks = new AtomicLong();
+    private final AtomicLong skippedEvents = new AtomicLong();
     private final AtomicLong droppedBufferFull = new AtomicLong();
     private final AtomicLong deadLettered = new AtomicLong();
     private final AtomicLong botClicksIgnored = new AtomicLong();
@@ -24,7 +24,7 @@ public class PipelineStats {
 
     public void recordProcessed(int written, int skipped) {
         processed.addAndGet(written);
-        skippedDeletedLinks.addAndGet(skipped);
+        skippedEvents.addAndGet(skipped);
         lastProcessedAt = Instant.now();
     }
 

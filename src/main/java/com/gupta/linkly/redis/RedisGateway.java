@@ -58,7 +58,7 @@ public class RedisGateway {
         this.cooldown = cooldown;
         this.clock = clock;
         if (!configured) {
-            log.warn("REDIS_URL is not set: running without Redis (no caching, clicks processed in-memory).");
+            log.warn("REDIS_URL is not set: running without Redis (clicks processed in-memory).");
         }
     }
 
@@ -74,13 +74,15 @@ public class RedisGateway {
 
     /** Called by SystemSettingsService when the admin flips the switch. */
     public void setEnabled(boolean enabled) {
-        if (this.enabled != enabled) {
-            log.info("Redis usage {} by admin setting", enabled ? "ENABLED" : "DISABLED");
+        if (this.enabled == enabled) {
+            return;
+        }
+        if (enabled) {
+            circuitOpenUntil = Instant.EPOCH;
+            consecutiveFailures.set(0);
         }
         this.enabled = enabled;
-        if (enabled) {
-            closeCircuit();
-        }
+        log.info("Redis usage {} by admin setting", enabled ? "ENABLED" : "DISABLED");
     }
 
     public boolean isCircuitOpen() {
@@ -194,11 +196,6 @@ public class RedisGateway {
         } else {
             log.debug("Redis {} failed again ({} consecutive failures)", operation, failures);
         }
-    }
-
-    private void closeCircuit() {
-        circuitOpenUntil = Instant.EPOCH;
-        consecutiveFailures.set(0);
     }
 
     static String rootMessage(Throwable e) {

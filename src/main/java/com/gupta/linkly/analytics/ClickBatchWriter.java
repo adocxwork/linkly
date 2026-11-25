@@ -1,67 +1,80 @@
 package com.gupta.linkly.analytics;
 
-import com.gupta.linkly.entity.ClickAnalytics;
-import com.gupta.linkly.repository.ClickAnalyticsRepository;
-import com.gupta.linkly.repository.LinkRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 /**
- * Writes a batch of clicks in ONE database transaction:
- * a batched INSERT of analytics rows plus one UPDATE per link (click_count + n).
- * Compared to one transaction per click this cuts database round-trips by roughly the batch size.
+ * Uses the event UUID as the analytics row's primary key. Only rows inserted by this
+ * statement contribute to the link counters, including when a Redis acknowledgement is lost.
  */
 @Component
 @RequiredArgsConstructor
 public class ClickBatchWriter {
 
-    private final LinkRepository linkRepository;
-    private final ClickAnalyticsRepository analyticsRepository;
+    private final JdbcTemplate jdbc;
     private final IpHasher ipHasher;
 
-    /** Events published by the previous app version carry no timestamp: use "now" for those. */
-    private static LocalDateTime clickTime(ClickEvent event) {
-        long millis = event.occurredAtMillis() > 0 ? event.occurredAtMillis() : System.currentTimeMillis();
-        return LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), ZoneId.systemDefault());
-    }
-
-    /** @return number of clicks written (events for deleted links are skipped). */
     @Transactional
     public int write(List<ClickEvent> events, Map<String, GeoIpService.Location> locations) {
-        Set<UUID> linkIds = events.stream().map(ClickEvent::linkId).filter(Objects::nonNull).collect(Collectors.toSet());
-        if (linkIds.isEmpty()) {
+        if (events.isEmpty()) {
             return 0;
         }
-        // A link may have been deleted after it was clicked; inserting would violate the FK.
-        Set<UUID> existing = new HashSet<>(linkRepository.findExistingIds(linkIds));
-
-        List<ClickAnalytics> rows = new ArrayList<>();
-        Map<UUID, Long> countsPerLink = new HashMap<>();
-        for (ClickEvent event : events) {
-            if (event.linkId() == null || !existing.contains(event.linkId())) {
-                continue;
+        String values = String.join(", ", Collections.nCopies(events.size(),
+                "(?::uuid, ?::uuid, ?::text, ?::text, ?::text, ?::text, ?::text, ?::timestamp)"));
+        // Lock the existing links in a consistent order. A concurrent delete either wins before
+        // that lock (the event is skipped) or waits until the insert and counter update commit.
+        String sql = """
+                WITH incoming(id, link_id, ip_hash, country, city, device_type, browser, clicked_at) AS (
+                    VALUES %s
+                ),
+                existing AS (
+                    SELECT id FROM links
+                    WHERE id IN (SELECT link_id FROM incoming)
+                    ORDER BY id FOR NO KEY UPDATE
+                ),
+                inserted AS (
+                    INSERT INTO click_analytics (id, link_id, ip_hash, country, city, device_type, browser, clicked_at)
+                    SELECT incoming.* FROM incoming JOIN existing ON existing.id = incoming.link_id
+                    ON CONFLICT (id) DO NOTHING
+                    RETURNING link_id
+                ),
+                counts AS (
+                    SELECT link_id, count(*) AS delta FROM inserted GROUP BY link_id
+                )
+                UPDATE links
+                SET click_count = click_count + counts.delta
+                FROM counts WHERE links.id = counts.link_id
+                RETURNING counts.delta
+                """.formatted(values);
+        List<Integer> counts = jdbc.query(sql, statement -> {
+            int index = 1;
+            for (ClickEvent event : events) {
+                GeoIpService.Location location = event.ip() == null ? GeoIpService.Location.UNKNOWN
+                        : locations.getOrDefault(event.ip(), GeoIpService.Location.UNKNOWN);
+                statement.setObject(index++, event.eventId());
+                statement.setObject(index++, event.linkId());
+                statement.setString(index++, ipHasher.hash(event.ip()));
+                statement.setString(index++, location.country());
+                statement.setString(index++, location.city());
+                statement.setString(index++, UserAgentParser.deviceType(event.userAgent()));
+                statement.setString(index++, UserAgentParser.browser(event.userAgent()));
+                statement.setObject(index++, clickTime(event));
             }
-            GeoIpService.Location location = locations.getOrDefault(event.ip(), GeoIpService.Location.UNKNOWN);
-            rows.add(ClickAnalytics.builder()
-                    .link(linkRepository.getReferenceById(event.linkId()))
-                    .ipHash(ipHasher.hash(event.ip()))
-                    .country(location.country())
-                    .city(location.city())
-                    .deviceType(UserAgentParser.deviceType(event.userAgent()))
-                    .browser(UserAgentParser.browser(event.userAgent()))
-                    .clickedAt(clickTime(event))
-                    .build());
-            countsPerLink.merge(event.linkId(), 1L, Long::sum);
-        }
-        analyticsRepository.saveAll(rows);
-        countsPerLink.forEach(linkRepository::incrementClickCount);
-        return rows.size();
+        }, (row, rowNumber) -> row.getInt(1));
+        return counts.stream().mapToInt(Integer::intValue).sum();
+    }
+
+    private static LocalDateTime clickTime(ClickEvent event) {
+        return LocalDateTime.ofInstant(Instant.ofEpochMilli(event.occurredAtMillis()), ZoneId.systemDefault());
     }
 }

@@ -24,7 +24,7 @@ public class ClientIpResolver {
 
     private final int trustedProxyCount;
 
-    public ClientIpResolver(@Value("${app.trusted-proxy-count:1}") int trustedProxyCount) {
+    public ClientIpResolver(@Value("${app.trusted-proxy-count:0}") int trustedProxyCount) {
         this.trustedProxyCount = Math.max(0, trustedProxyCount);
     }
 
@@ -33,11 +33,11 @@ public class ClientIpResolver {
         if (trustedProxyCount == 0 || forwarded == null || forwarded.isBlank()) {
             return request.getRemoteAddr();
         }
-        List<String> hops = Arrays.stream(forwarded.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
-        if (hops.isEmpty()) {
+        List<String> hops = Arrays.stream(forwarded.split(",", -1)).map(String::trim).toList();
+        if (hops.size() < trustedProxyCount) {
             return request.getRemoteAddr();
         }
-        String candidate = hops.get(Math.max(0, hops.size() - trustedProxyCount));
+        String candidate = hops.get(hops.size() - trustedProxyCount);
         return IpAddresses.isValid(candidate) ? candidate : request.getRemoteAddr();
     }
 

@@ -10,8 +10,6 @@ import com.gupta.linkly.entity.User;
 import com.gupta.linkly.exception.BadRequestException;
 import com.gupta.linkly.exception.DuplicateResourceException;
 import com.gupta.linkly.exception.ResourceNotFoundException;
-import com.gupta.linkly.redis.CacheKeys;
-import com.gupta.linkly.redis.RedisJsonCache;
 import com.gupta.linkly.repository.ClickAnalyticsRepository;
 import com.gupta.linkly.repository.LinkRepository;
 import com.gupta.linkly.repository.UserRepository;
@@ -21,6 +19,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -39,21 +39,16 @@ public class LinkService {
     private final ClickAnalyticsRepository analyticsRepository;
     private final UrlShortenerService urlShortenerService;
     private final ClickEventPublisher clickEventPublisher;
-    private final RedisJsonCache cache;
 
     @Value("${app.links.max-per-user:200}")
     private int maxLinksPerUser = 200;
-
-    /** Cached redirect data. A record, so it serialises cleanly to JSON in Redis. */
-    public record RedirectTarget(UUID linkId, String originalUrl) {
-    }
 
     // ------------------------------------------------------------------ owner CRUD
 
     @Transactional
     public LinkResponse addLink(String username, LinkRequest request) {
         requireRedirectableUrl(request.getOriginalUrl());
-        User user = getUser(username);
+        User user = getUserForUpdate(username);
         if (linkRepository.countByUserId(user.getId()) >= maxLinksPerUser) {
             throw new BadRequestException("You can have at most " + maxLinksPerUser + " links");
         }
@@ -78,7 +73,6 @@ public class LinkService {
                 .user(user)
                 .build();
         linkRepository.saveAndFlush(link); // flush so a unique-constraint race surfaces here as 409
-        evictProfile(username);
         return LinkResponse.from(link);
     }
 
@@ -98,7 +92,6 @@ public class LinkService {
         if (request.getActive() != null) {
             link.setActive(request.getActive());
         }
-        cache.evictAfterCommit(List.of(CacheKeys.redirect(link.getShortUrl()), CacheKeys.profile(username)));
         return LinkResponse.from(link);
     }
 
@@ -106,15 +99,14 @@ public class LinkService {
     public void deleteLink(String username, UUID linkId) {
         Link link = getOwnedLink(linkId, username);
         linkRepository.delete(link); // click rows are removed by ON DELETE CASCADE
-        cache.evictAfterCommit(List.of(CacheKeys.redirect(link.getShortUrl()), CacheKeys.profile(username)));
     }
 
     /** Ids not owned by the user are ignored; links not mentioned keep their relative order after these. */
     @Transactional
     public void reorderLinks(String username, List<UUID> orderedIds) {
-        User user = getUser(username);
+        User user = getUserForUpdate(username);
         Map<UUID, Link> owned = linkRepository.findByUserIdOrderBySortOrderAscCreatedAtDesc(user.getId()).stream()
-                .collect(Collectors.toMap(Link::getId, Function.identity()));
+                .collect(Collectors.toMap(Link::getId, Function.identity(), (first, second) -> first, LinkedHashMap::new));
         int position = 0;
         for (UUID id : new LinkedHashSet<>(orderedIds)) {
             Link link = owned.remove(id);
@@ -125,7 +117,6 @@ public class LinkService {
         for (Link remaining : owned.values()) {
             remaining.setSortOrder(position++);
         }
-        evictProfile(username); // dirty checking writes the changes on commit
     }
 
     public DashboardResponse getDashboard(String username) {
@@ -138,26 +129,17 @@ public class LinkService {
 
     // ------------------------------------------------------------------ redirect hot path
 
-    /**
-     * Resolves a short code and records the click asynchronously.
-     * Redis hit: zero database queries. Redis miss or Redis down: one indexed query.
-     * The click is queued, never written on this request thread.
-     */
+    /** Resolves the current destination and hands off analytics for GET requests. */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public String resolveRedirect(String shortUrl, String clientIp, String userAgent) {
-        String key = CacheKeys.redirect(shortUrl);
-        RedirectTarget target = cache.get(key, RedirectTarget.class).orElseGet(() -> {
-            LinkRepository.RedirectTarget row = linkRepository.findRedirectTarget(shortUrl)
-                    .orElseThrow(() -> new ResourceNotFoundException("Link not found"));
-            if (!Boolean.TRUE.equals(row.getActive()) || Boolean.TRUE.equals(row.getOwnerSuspended())) {
-                throw new ResourceNotFoundException("Link is inactive");
-            }
-            RedirectTarget fresh = new RedirectTarget(row.getId(), row.getOriginalUrl());
-            cache.put(key, fresh, CacheKeys.REDIRECT_TTL);
-            return fresh;
-        });
-        clickEventPublisher.publish(target.linkId(), clientIp, userAgent);
-        return target.originalUrl();
+    public String resolveRedirect(String shortUrl, String clientIp, String userAgent, boolean recordClick) {
+        LinkRepository.RedirectTarget target = linkRepository.findRedirectTarget(shortUrl)
+                .filter(row -> Boolean.TRUE.equals(row.getActive()) && !Boolean.TRUE.equals(row.getOwnerSuspended()))
+                .orElseThrow(() -> new ResourceNotFoundException("Link not found"));
+        requireRedirectableUrl(target.getOriginalUrl());
+        if (recordClick) {
+            clickEventPublisher.publish(target.getId(), clientIp, userAgent);
+        }
+        return target.getOriginalUrl();
     }
 
     // ------------------------------------------------------------------ analytics
@@ -207,17 +189,19 @@ public class LinkService {
      */
     private static void requireRedirectableUrl(String url) {
         try {
-            java.net.URI uri = new java.net.URI(url.trim());
-            if (uri.getHost() == null) {
-                throw new BadRequestException("URL must include a valid host name");
+            URI uri = new URI(url.trim());
+            if (uri.getHost() == null || uri.getUserInfo() != null
+                    || !("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))) {
+                throw new BadRequestException("URL must be an HTTP(S) address with a host and no embedded credentials");
             }
-        } catch (java.net.URISyntaxException e) {
+        } catch (URISyntaxException e) {
             throw new BadRequestException("URL contains characters that are not allowed; please encode them");
         }
     }
 
-    private void evictProfile(String username) {
-        cache.evictAfterCommit(List.of(CacheKeys.profile(username)));
+    private User getUserForUpdate(String username) {
+        return userRepository.findByUsernameForUpdate(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
     private User getUser(String username) {

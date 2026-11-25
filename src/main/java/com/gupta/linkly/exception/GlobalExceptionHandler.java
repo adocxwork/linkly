@@ -2,13 +2,16 @@ package com.gupta.linkly.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -17,6 +20,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import java.sql.SQLException;
 import java.util.stream.Collectors;
 
 /**
@@ -40,8 +44,10 @@ public class GlobalExceptionHandler {
     /** Race condition safety net: two requests passed the "exists?" check at the same time. */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponse> integrity(DataIntegrityViolationException ex, HttpServletRequest request) {
-        log.warn("Data integrity violation on {}: {}", request.getRequestURI(), ex.getMostSpecificCause().getMessage());
-        return build(HttpStatus.CONFLICT, "This value is already in use", request);
+        if (ex.getMostSpecificCause() instanceof SQLException cause && "23505".equals(cause.getSQLState())) {
+            return build(HttpStatus.CONFLICT, "This value is already in use", request);
+        }
+        return unexpected(ex, request);
     }
 
     @ExceptionHandler(BadRequestException.class)
@@ -57,6 +63,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({LockedException.class, DisabledException.class})
     public ResponseEntity<ErrorResponse> locked(Exception ex, HttpServletRequest request) {
         return build(HttpStatus.FORBIDDEN, "Your account has been suspended", request);
+    }
+
+    @ExceptionHandler({AuthenticationServiceException.class, CannotCreateTransactionException.class,
+            DataAccessResourceFailureException.class})
+    public ResponseEntity<ErrorResponse> unavailable(Exception ex, HttpServletRequest request) {
+        log.warn("Backend unavailable for {} {} ({})", request.getMethod(), request.getRequestURI(),
+                ex.getClass().getSimpleName());
+        return build(HttpStatus.SERVICE_UNAVAILABLE, "Server temporarily unavailable. Please try again shortly.", request);
     }
 
     @ExceptionHandler(AuthenticationException.class)

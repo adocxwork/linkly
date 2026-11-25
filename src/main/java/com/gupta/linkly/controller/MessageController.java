@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -20,8 +21,10 @@ public class MessageController {
     private final MessageService messageService;
 
     @GetMapping
-    public List<MessageResponse> getMyMessages(Authentication auth) {
-        return messageService.getUserMessages(auth.getName());
+    public List<MessageResponse> getMyMessages(Authentication auth,
+                                              @RequestParam(required = false) LocalDateTime before,
+                                              @RequestParam(required = false) UUID beforeId) {
+        return messageService.getUserMessages(auth.getName(), before, beforeId);
     }
 
     @DeleteMapping("/{id}")

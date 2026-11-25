@@ -35,9 +35,9 @@ public class Link {
     @Column(nullable = false)
     private Boolean active = true;
 
-    /** Denormalised counter, incremented in batches by the analytics pipeline. */
+    /** Denormalised counter. Only the analytics writer updates this column. */
     @Builder.Default
-    @Column(nullable = false)
+    @Column(nullable = false, updatable = false)
     private Long clickCount = 0L;
 
     @Builder.Default

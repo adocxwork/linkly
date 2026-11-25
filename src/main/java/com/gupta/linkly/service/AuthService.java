@@ -13,12 +13,14 @@ import com.gupta.linkly.security.CustomUserDetails;
 import com.gupta.linkly.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Set;
 
@@ -38,6 +40,7 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
+        validatePassword(request.getPassword());
         String username = request.getUsername().trim();
         String email = request.getEmail().trim().toLowerCase(Locale.ROOT);
 
@@ -68,11 +71,24 @@ public class AuthService {
     }
 
     public AuthResponse login(LoginRequest request) {
+        if (!fitsBcrypt(request.getPassword())) {
+            throw new BadCredentialsException("Invalid password");
+        }
         // Throws BadCredentialsException / LockedException, mapped to 401 / 403 by the handler.
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(request.getIdentifier().trim(), request.getPassword()));
         User user = ((CustomUserDetails) authentication.getPrincipal()).getUser();
         return new AuthResponse(jwtUtil.generateToken(user), UserProfileResponse.from(user));
+    }
+
+    static void validatePassword(String password) {
+        if (password.isBlank() || !fitsBcrypt(password)) {
+            throw new BadRequestException("Password must contain non-space characters and fit within 72 UTF-8 bytes");
+        }
+    }
+
+    static boolean fitsBcrypt(String password) {
+        return password.getBytes(StandardCharsets.UTF_8).length <= 72;
     }
 
     static String blankToNull(String value) {

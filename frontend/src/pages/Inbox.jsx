@@ -1,38 +1,57 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { MessageSquare, Trash2 } from 'lucide-react';
-import api from '../api';
+import api, { errorMessage } from '../api';
 
 const Inbox = () => {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
+  const [cursor, setCursor] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  const pageCursor = (page) => {
+    if (page.length < 200) return null;
+    const last = page.at(-1);
+    return { before: last.createdAt, beforeId: last.id };
+  };
 
   useEffect(() => {
-    const fetchMessages = async () => {
-      try {
-        const { data } = await api.get('/messages');
+    const controller = new AbortController();
+    api.get('/messages', { signal: controller.signal })
+      .then(({ data }) => {
         setMessages(data);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchMessages();
+        setCursor(pageCursor(data));
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setErrorMsg(errorMessage(error, 'Failed to load messages'));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
   }, []);
 
-  const showError = (msg) => {
-    setErrorMsg(msg);
-    setTimeout(() => setErrorMsg(''), 4000);
+  const loadOlder = async () => {
+    setLoadingMore(true);
+    setErrorMsg('');
+    try {
+      const { data } = await api.get('/messages', { params: cursor });
+      setMessages((current) => [...current, ...data]);
+      setCursor(pageCursor(data));
+    } catch (error) {
+      setErrorMsg(errorMessage(error, 'Failed to load older messages'));
+    } finally {
+      setLoadingMore(false);
+    }
   };
 
   const handleDelete = async (id) => {
     try {
       await api.delete(`/messages/${id}`);
-      setMessages(messages.filter(msg => msg.id !== id));
+      setMessages((current) => current.filter((message) => message.id !== id));
     } catch {
-      showError('Failed to delete message');
+      setErrorMsg('Failed to delete message');
     }
   };
 
@@ -56,7 +75,7 @@ const Inbox = () => {
             key={msg.id}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.05 }}
+            transition={{ delay: Math.min(idx * 0.015, 0.2) }}
             className="card glass"
             style={{ padding: '20px' }}
           >
@@ -79,12 +98,17 @@ const Inbox = () => {
             <p style={{ margin: 0, whiteSpace: 'pre-wrap', color: 'var(--text-primary)' }}>{msg.content}</p>
           </motion.div>
         ))}
-        {messages.length === 0 && (
+        {messages.length === 0 && !errorMsg && (
           <div className="text-center text-secondary mt-8 card glass">
             No messages yet. When someone leaves a public message on your profile, it will appear here.
           </div>
         )}
       </div>
+      {cursor && (
+        <button type="button" className="btn btn-secondary mt-6" disabled={loadingMore} onClick={loadOlder}>
+          {loadingMore ? 'Loading…' : 'Load older messages'}
+        </button>
+      )}
     </div>
   );
 };

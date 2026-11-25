@@ -9,7 +9,6 @@ import com.gupta.linkly.entity.User;
 import com.gupta.linkly.exception.BadRequestException;
 import com.gupta.linkly.exception.ForbiddenException;
 import com.gupta.linkly.exception.ResourceNotFoundException;
-import com.gupta.linkly.redis.RedisJsonCache;
 import com.gupta.linkly.repository.LinkRepository;
 import com.gupta.linkly.repository.UserRepository;
 import com.gupta.linkly.security.JwtUtil;
@@ -31,10 +30,9 @@ class UserServiceTest {
 
     private final UserRepository userRepository = mock(UserRepository.class);
     private final LinkRepository linkRepository = mock(LinkRepository.class);
-    private final RedisJsonCache cache = mock(RedisJsonCache.class);
     private final PasswordEncoder encoder = new BCryptPasswordEncoder(4);
     private final JwtUtil jwtUtil = new JwtUtil("test-secret-that-is-at-least-32-characters-long", 60_000);
-    private final UserService service = new UserService(userRepository, linkRepository, encoder, jwtUtil, cache);
+    private final UserService service = new UserService(userRepository, linkRepository, encoder, jwtUtil);
     private User user;
 
     @BeforeEach
@@ -43,7 +41,7 @@ class UserServiceTest {
                 .password(encoder.encode("password123")).role(Role.ROLE_USER)
                 .upiId("alice@okbank").enableUpiPayment(false).enablePublicMessaging(true).build();
         when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
-        when(cache.get(anyString(), any())).thenReturn(Optional.empty());
+        when(userRepository.findByUsernameForUpdate("alice")).thenReturn(Optional.of(user));
     }
 
     @Test
@@ -55,7 +53,6 @@ class UserServiceTest {
 
         assertThat(profile.getLinks()).extracting(PublicProfileResponse.PublicLink::getShortUrl).containsExactly("abc");
         assertThat(profile.getUpiId()).isNull();
-        verify(cache).put(eq("profile:v2:alice"), any(), any());
     }
 
     @Test

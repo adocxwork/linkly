@@ -36,6 +36,13 @@ class ClientIpResolverTest {
     }
 
     @Test
+    void rejectsAnIncompleteChainAndDoesNotShiftAcrossEmptyHops() {
+        ClientIpResolver resolver = new ClientIpResolver(2);
+        assertThat(resolver.resolve(request("203.0.113.7"))).isEqualTo("10.0.0.5");
+        assertThat(resolver.resolve(request("203.0.113.7, , 76.76.21.21"))).isEqualTo("10.0.0.5");
+    }
+
+    @Test
     void fallsBackToRemoteAddrWithoutHeaderOrForGarbage() {
         ClientIpResolver resolver = new ClientIpResolver(1);
         assertThat(resolver.resolve(request(null))).isEqualTo("10.0.0.5");

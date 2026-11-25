@@ -12,7 +12,7 @@ import java.util.UUID;
 
 /**
  * All analytics are aggregated by PostgreSQL (GROUP BY) instead of loading every click row
- * into Java memory, so a link with a million clicks costs the same as one with ten.
+ * into Java memory. Query work still grows with the number of matching rows.
  */
 @Repository
 public interface ClickAnalyticsRepository extends JpaRepository<ClickAnalytics, UUID> {

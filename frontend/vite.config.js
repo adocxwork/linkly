@@ -7,6 +7,10 @@ export default defineConfig({
   server: {
     // Proxy keys are path prefixes: '/r/' (not '/r'), otherwise '/register' would be proxied too.
     proxy: {
+      '/actuator/health/readiness': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
       '/api/': {
         target: 'http://localhost:8080',
         changeOrigin: true,

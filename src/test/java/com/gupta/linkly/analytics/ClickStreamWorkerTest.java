@@ -34,10 +34,11 @@ class ClickStreamWorkerTest {
     void setUp() {
         when(template.opsForStream()).thenReturn(stream);
         when(template.execute(any(RedisCallback.class))).thenReturn("OK"); // XGROUP CREATE
+        when(stream.acknowledge(anyString(), anyString(), any(RecordId[].class))).thenReturn(1L);
         RedisGateway gateway = new RedisGateway(template, true, Duration.ofSeconds(30), Clock.systemUTC());
-        ClickEventPublisher publisher = new ClickEventPublisher(gateway, new LocalClickBuffer(10), stats, json, "clicks", 1000);
+        ClickEventPublisher publisher = new ClickEventPublisher(gateway, new LocalClickBuffer(10), stats, json, "clicks", 1000, Runnable::run);
         worker = new ClickStreamWorker(gateway, publisher, new LocalClickBuffer(10), processor, stats, json,
-                "group", "consumer", 100, Duration.ofMinutes(5), 3);
+                "group", "consumer", 100, Duration.ofMinutes(5));
     }
 
     /**
@@ -63,7 +64,7 @@ class ClickStreamWorkerTest {
 
     @Test
     void acknowledgesAfterSuccessfulProcessing() {
-        ClickEvent event = new ClickEvent(UUID.randomUUID(), "8.8.8.8", "Mozilla", 1L);
+        ClickEvent event = new ClickEvent(UUID.randomUUID(), UUID.randomUUID(), "8.8.8.8", "Mozilla", 1L);
         streamReturns(record("1-0", json.writeValueAsString(event)));
 
         worker.drainStream();
@@ -73,19 +74,42 @@ class ClickStreamWorkerTest {
     }
 
     @Test
-    void leavesRecordPendingOnFailureThenDeadLettersAfterMaxAttempts() {
-        ClickEvent event = new ClickEvent(UUID.randomUUID(), "8.8.8.8", "Mozilla", 1L);
+    void leavesRecordPendingDuringDatabaseFailureAndRetriesAfterRecovery() throws Exception {
+        ClickEvent event = new ClickEvent(UUID.randomUUID(), UUID.randomUUID(), "8.8.8.8", "Mozilla", 1L);
         streamReturns(record("1-0", json.writeValueAsString(event)));
-        when(processor.process(anyList())).thenThrow(new RuntimeException("database down"));
+        when(processor.process(anyList())).thenThrow(new RuntimeException("database down")).thenReturn(1);
 
-        worker.drainStream();                       // attempt 1: not acknowledged
+        worker.drainStream();
+        worker.drainStream();
+        verify(processor, times(1)).process(List.of(event));
         verify(stream, never()).acknowledge(anyString(), anyString(), any(RecordId[].class));
 
-        forceSweep(); worker.drainStream();         // attempt 2
-        forceSweep(); worker.drainStream();         // attempt 3 = max: give up
+        var retry = ClickStreamWorker.class.getDeclaredField("retryStreamAt");
+        retry.setAccessible(true);
+        retry.set(worker, java.time.Instant.EPOCH);
+        worker.drainStream();
 
         verify(stream).acknowledge(eq("clicks"), eq("group"), eq(RecordId.of("1-0")));
-        assertThat(stats.getDeadLettered()).hasValue(1);
+        assertThat(stats.getDeadLettered()).hasValue(0);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void derivesTheSameIdWhenAnOlderRecordIsRedelivered() {
+        streamReturns(record("1720000000000-0", """
+                {"linkId":"4bcea688-fb56-4814-aa03-68d8df8cb39c","ip":"8.8.8.8","userAgent":"Mozilla"}
+                """));
+        when(stream.acknowledge(anyString(), anyString(), any(RecordId[].class))).thenReturn(null, 1L);
+
+        worker.drainStream();
+        worker.drainStream();
+
+        var first = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(processor, times(2)).process(first.capture());
+        assertThat(first.getAllValues().get(0)).isEqualTo(first.getAllValues().get(1));
+        ClickEvent event = (ClickEvent) first.getAllValues().get(0).get(0);
+        assertThat(event.eventId()).isNotNull();
+        assertThat(event.occurredAtMillis()).isEqualTo(1720000000000L);
     }
 
     @Test
@@ -106,13 +130,4 @@ class ClickStreamWorkerTest {
         verify(stream, never()).read(any(Consumer.class), any(StreamReadOptions.class), any(StreamOffset.class));
     }
 
-    private void forceSweep() {
-        try {
-            var field = ClickStreamWorker.class.getDeclaredField("nextSweepAt");
-            field.setAccessible(true);
-            field.set(worker, java.time.Instant.EPOCH);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException(e);
-        }
-    }
 }

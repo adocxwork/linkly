@@ -31,7 +31,7 @@ public class UserController {
         return userService.updateProfile(auth.getName(), request);
     }
 
-    @Operation(summary = "Update account settings; returns a fresh token (old ones are revoked on password change)")
+    @Operation(summary = "Update settings and rotate the token when the password changes")
     @PutMapping("/settings")
     public AuthResponse updateSettings(Authentication auth, @Valid @RequestBody ChangeSettingsRequest request) {
         return userService.updateSettings(auth.getName(), request);

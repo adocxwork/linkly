@@ -50,7 +50,7 @@ public class GeoIpService {
     private volatile Instant lastFailureAt;
     private volatile String lastError;
 
-    public GeoIpService(@Value("${app.geoip.enabled:true}") boolean enabled,
+    public GeoIpService(@Value("${app.geoip.enabled:false}") boolean enabled,
                         @Value("${app.geoip.url:https://get.geojs.io/v1/ip/geo.json}") String url,
                         JsonMapper jsonMapper) {
         this.enabled = enabled;
@@ -112,7 +112,7 @@ public class GeoIpService {
             return true;
         } catch (RuntimeException e) {
             lastFailureAt = Instant.now();
-            lastError = e.getClass().getSimpleName() + ": " + e.getMessage();
+            lastError = e.getClass().getSimpleName();
             pausedUntil = Instant.now().plus(PAUSE_AFTER_FAILURE);
             log.warn("Geo-IP lookup failed, pausing lookups for {} min: {}", PAUSE_AFTER_FAILURE.toMinutes(), lastError);
             return false;
@@ -121,7 +121,10 @@ public class GeoIpService {
 
     private static String text(JsonNode node, String field) {
         String value = node.path(field).asString("");
-        return value.isBlank() || "nil".equals(value) ? "Unknown" : value;
+        if (value.isBlank() || "nil".equals(value) || value.length() > 255 || value.indexOf(0) >= 0) {
+            return "Unknown";
+        }
+        return value;
     }
 
     public boolean isEnabled() {

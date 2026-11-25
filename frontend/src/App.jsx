@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import Navbar from './components/Navbar';
 
 // Each page is loaded on demand, so visitors of a public profile don't download the
@@ -27,6 +27,11 @@ const ProtectedRoute = ({ children, adminOnly = false }) => {
   return children;
 };
 
+function PublicProfileRoute() {
+  const { username } = useParams();
+  return <Profile key={username} username={username} />;
+}
+
 function App() {
   return (
     <BrowserRouter>
@@ -41,7 +46,7 @@ function App() {
             <Route path="/inbox" element={<ProtectedRoute><Inbox /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute adminOnly><AdminDashboard /></ProtectedRoute>} />
-            <Route path="/p/:username" element={<Profile />} />
+            <Route path="/p/:username" element={<PublicProfileRoute />} />
             <Route path="/link-error" element={<ErrorPage />} />
             <Route path="*" element={<ErrorPage variant="notFound" />} />
           </Routes>

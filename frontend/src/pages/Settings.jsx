@@ -65,8 +65,9 @@ const Settings = () => {
   const logoutEverywhere = async () => {
     try {
       await api.post('/users/me/revoke-sessions');
-    } catch {
-      // ignore: we log out locally either way
+    } catch (error) {
+      showError(errorMessage(error, 'Could not revoke your other sessions'));
+      return;
     }
     localStorage.removeItem('token');
     localStorage.removeItem('user');
