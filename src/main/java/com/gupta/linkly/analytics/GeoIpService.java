@@ -3,6 +3,7 @@ package com.gupta.linkly.analytics;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
@@ -50,16 +51,25 @@ public class GeoIpService {
     private volatile Instant lastFailureAt;
     private volatile String lastError;
 
-    public GeoIpService(@Value("${app.geoip.enabled:false}") boolean enabled,
+    @Autowired
+    public GeoIpService(@Value("${app.geoip.enabled:true}") boolean enabled,
                         @Value("${app.geoip.url:https://get.geojs.io/v1/ip/geo.json}") String url,
                         JsonMapper jsonMapper) {
+        this(enabled, url, jsonMapper, buildClient());
+    }
+
+    GeoIpService(boolean enabled, String url, JsonMapper jsonMapper, RestClient restClient) {
         this.enabled = enabled;
         this.url = url;
         this.jsonMapper = jsonMapper;
+        this.restClient = restClient;
+    }
+
+    private static RestClient buildClient() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(2_000);
         factory.setReadTimeout(3_000);
-        this.restClient = RestClient.builder().requestFactory(factory).build();
+        return RestClient.builder().requestFactory(factory).build();
     }
 
     /** Returns a location for every input IP (never throws). */
@@ -67,8 +77,12 @@ public class GeoIpService {
         Map<String, Location> result = new HashMap<>();
         List<String> toFetch = new ArrayList<>();
         for (String ip : new LinkedHashSet<>(ips)) {
-            if (ip == null || IpAddresses.isPrivateOrLocal(ip)) {
-                result.put(ip, ip != null && IpAddresses.isValid(ip) ? Location.LOCAL : Location.UNKNOWN);
+            if (!enabled || !IpAddresses.isValid(ip)) {
+                result.put(ip, Location.UNKNOWN);
+                continue;
+            }
+            if (IpAddresses.isPrivateOrLocal(ip)) {
+                result.put(ip, Location.LOCAL);
                 continue;
             }
             Location cached = cache.getIfPresent(ip);
@@ -78,7 +92,7 @@ public class GeoIpService {
                 toFetch.add(ip);
             }
         }
-        if (!toFetch.isEmpty() && enabled && Instant.now().isAfter(pausedUntil)) {
+        if (!toFetch.isEmpty() && Instant.now().isAfter(pausedUntil)) {
             for (int i = 0; i < toFetch.size(); i += MAX_IPS_PER_REQUEST) {
                 List<String> chunk = toFetch.subList(i, Math.min(i + MAX_IPS_PER_REQUEST, toFetch.size()));
                 if (!fetchChunk(chunk, result)) {
@@ -98,15 +112,24 @@ public class GeoIpService {
                     .uri(url + "?ip={ips}", String.join(",", ips))
                     .retrieve()
                     .body(String.class);
-            JsonNode array = jsonMapper.readTree(body == null ? "[]" : body);
-            for (JsonNode node : array) {
-                String ip = node.path("ip").asString(null);
-                if (ip == null) {
-                    continue;
+            JsonNode response = jsonMapper.readTree(body == null ? "" : body);
+            if (response == null || !(response.isArray() || response.isObject())) {
+                throw new IllegalStateException("Unexpected GeoJS response");
+            }
+            Map<String, Location> resolved = new HashMap<>();
+            Iterable<JsonNode> entries = response.isArray() ? response : List.of(response);
+            for (JsonNode node : entries) {
+                String key = IpAddresses.normalize(node.path("ip").asString(null));
+                if (key != null) {
+                    resolved.put(key, new Location(text(node, "country"), text(node, "city")));
                 }
-                Location location = new Location(text(node, "country"), text(node, "city"));
-                cache.put(ip, location);
-                out.put(ip, location);
+            }
+            for (String ip : ips) {
+                Location location = resolved.get(IpAddresses.normalize(ip));
+                if (location != null) {
+                    cache.put(ip, location);
+                    out.put(ip, location);
+                }
             }
             lastSuccessAt = Instant.now();
             return true;

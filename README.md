@@ -1,76 +1,48 @@
-<div align="center">
-  <img src="frontend/public/favicon.svg" width="52" height="52" alt="">
-  <h1>Linkly</h1>
-  <p><strong>One public page for your links. Click analytics behind every short URL.</strong></p>
-  <p>
-    <a href="https://linkly-plum.vercel.app/p/adocxwork">Public profile</a> ·
-    <a href="https://linkly-plum.vercel.app/register">Try Linkly</a> ·
-    <a href="https://linkly-amwf.onrender.com/swagger-ui/index.html">Explore the API</a>
-  </p>
-  <a href="https://github.com/adocxwork/linkly/actions/workflows/ci.yml"><img src="https://github.com/adocxwork/linkly/actions/workflows/ci.yml/badge.svg" alt="CI build and tests"></a>
-</div>
+# Linkly
 
-<br>
+**A shareable link page with short URLs and click analytics.**
 
-<p align="center">
-  <img src="docs/images/profile-demo.png" width="405" alt="Linkly public profile with three links and an anonymous message form">
-  <img src="docs/images/analytics-demo.png" width="405" alt="Linkly analytics with a 30-day click chart and visitor breakdowns">
-</p>
-<p align="center"><em>Public profile and per-link analytics with sample data</em></p>
+Linkly gives creators, students, and independent builders one place to share their work. Publish a profile with your important links, shorten individual URLs, and see what visitors open. A private inbox receives messages when you enable them on your public page.
 
-Linkly combines a link-in-bio page, a URL shortener and an analytics dashboard. Creators can reorder links, receive anonymous messages and optionally show a UPI QR code. The dashboard shows click trends, device and browser breakdowns, and estimated unique visitors.
+[Open Linkly](https://linkly-plum.vercel.app) · [View a public profile](https://linkly-plum.vercel.app/p/adocxwork) · [Browse the REST API](https://linkly-amwf.onrender.com/swagger-ui/index.html)
 
-**Stack** · Java 21 · Spring Boot · PostgreSQL · Redis Streams · React · Flyway · Docker
+[![Build and tests](https://github.com/adocxwork/linkly/actions/workflows/ci.yml/badge.svg)](https://github.com/adocxwork/linkly/actions/workflows/ci.yml)
 
-## What happens when someone clicks?
+![Linkly home page with an example creator profile](assets/linkly-home.png)
 
-```mermaid
-flowchart LR
-    Browser([Visitor]) -->|"GET /r/{code}"| API[Spring Boot]
-    API -->|Indexed lookup| PG[(PostgreSQL)]
-    API -->|302 redirect| Target([Destination])
-    API -.->|Enqueue click| Publisher[Background publisher]
-    Publisher -->|XADD| Stream[(Redis Stream)]
-    Publisher -.->|Redis unavailable| Buffer[Bounded local queue]
-    Stream -->|Consumer group| Worker[Analytics worker]
-    Buffer --> Worker
-    Worker -->|Insert events and update counts| PG
-    Worker -.->|XACK after commit| Stream
-```
+## Try it
 
-| Design decision | What it buys |
+1. Create an account and add a destination from **Dashboard**. You’ll get a short URL you can copy immediately.
+2. Choose **View public profile ↗** to open your shareable page in a new tab. Use **Settings** to edit your bio, enable messages, or add a UPI payment QR code.
+3. Open the short URL in a browser, then select **Analytics** on that link to see the click count and breakdown. New events can take a few seconds to appear.
+
+The hosted backend may take a minute or two to wake after inactivity.
+
+## How the backend handles a click
+
+| Design | Why it matters |
 | --- | --- |
-| Resolve redirects from PostgreSQL | A single indexed lookup checks the link and its owner. Deactivation and suspension take effect without relying on cache invalidation. |
-| Process clicks off the request thread | The visitor gets the redirect while the worker handles persistence in batches. |
-| Count an event once across retries | The event UUID identifies the row, and only first-time inserts increment the aggregate counter in the same transaction. |
-| Keep redirects working during Redis outages | The breaker limits failed calls and analytics uses a bounded in-memory queue while Redis recovers. |
-| Validate sessions against account state | JWTs carry the account UUID and token version so global logout, password changes and suspension revoke older tokens. |
+| Indexed PostgreSQL lookup, followed by an HTTP 302 | Updated destinations, disabled links, and suspended accounts take effect without waiting for a cache to expire. |
+| Redis Streams and a scheduled consumer | A redirect can finish while the analytics worker stores click events in batches. |
+| Event IDs, a single SQL transaction, and acknowledgement after commit | Replaying a queued event can’t double-count the click. |
+| Circuit breaker and bounded local queue | Redirects keep working when Redis is unavailable. The in-memory fallback can lose buffered clicks on restart. |
+| Account UUID and token version in each JWT | Password changes, suspension, and signing out everywhere revoke older tokens. |
 
-The admin dashboard shows PostgreSQL readiness, Redis connectivity, stream backlog and dropped click counts. The demo runs on **Vercel** and **Render** with **Supabase** and **Upstash**. The first request after Render idles can take a minute or two.
+**Stack:** Java 21, Spring Boot, PostgreSQL, Redis Streams, React, Flyway, and Docker. Hosted on Render, Supabase, Upstash, and Vercel.
 
-## Start here in the code
+## Run locally
 
-| If you’re curious about… | Read this |
-| --- | --- |
-| URL validation, ownership and redirects | [LinkService.java](src/main/java/com/gupta/linkly/service/LinkService.java) |
-| Consumer groups, acknowledgements and retries | [ClickStreamWorker.java](src/main/java/com/gupta/linkly/analytics/ClickStreamWorker.java) |
-| Idempotent SQL and transactional counters | [ClickBatchWriter.java](src/main/java/com/gupta/linkly/analytics/ClickBatchWriter.java) |
-| Token validation and revocation | [JwtAuthenticationFilter.java](src/main/java/com/gupta/linkly/security/JwtAuthenticationFilter.java) |
-| Schema and database constraints | [Flyway migrations](src/main/resources/db/migration) |
-
-## Run it locally
-
-Install Java 21, Node 22.13+ and PostgreSQL. Redis is optional.
+Use Java 21, Node 22.13+, and PostgreSQL. Redis is optional.
 
 ```bash
 cp .env.example .env
-# Set DB credentials and a JWT_SECRET of at least 32 bytes in .env
+# Set DB_USERNAME, DB_PASSWORD, and JWT_SECRET in .env
 createdb linkly
 npm --prefix frontend ci
 ./run.sh
 ```
 
-Open [the local app](http://localhost:5173) or [the local Swagger UI](http://localhost:8080/swagger-ui/index.html). Flyway creates the tables on startup. Set `ADMIN_PASSWORD` before launch if you want an admin account.
+Use `openssl rand -hex 32` for a development JWT secret. Open [localhost:5173](http://localhost:5173) for the app or [localhost:8080](http://localhost:8080/swagger-ui/index.html) for the API explorer. Flyway applies the migrations on startup. Set `ADMIN_PASSWORD` to create the initial admin account.
 
 ```bash
 ./mvnw verify
@@ -78,8 +50,6 @@ npm --prefix frontend run lint
 npm --prefix frontend run build
 ```
 
-The PostgreSQL integration tests use Testcontainers or a disposable database supplied via `TEST_DB_URL`. They cover schema migration, signup, redirects, inbox pagination and replay-safe click counts.
+Backend integration tests use Docker or a disposable PostgreSQL database supplied through `TEST_DB_URL`. The suite covers account and link flows, redirects, inbox pagination, and replay-safe analytics.
 
-**Scope:** Linkly runs as a single backend instance. Queued clicks can be lost during a restart or a prolonged backlog. IP-based visitor estimates have limits.
-
-[Architecture and trade-offs](docs/ARCHITECTURE.md) · [Deploy and troubleshoot](docs/DEPLOYMENT.md)
+[Project documentation](PROJECT_DOCUMENTATIONS.md) covers the request lifecycle, database, deployment, and interview walkthrough.

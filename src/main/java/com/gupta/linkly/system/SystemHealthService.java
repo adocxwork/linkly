@@ -5,10 +5,8 @@ import com.gupta.linkly.analytics.GeoIpService;
 import com.gupta.linkly.analytics.LocalClickBuffer;
 import com.gupta.linkly.analytics.PipelineStats;
 import com.gupta.linkly.redis.RedisGateway;
-import com.gupta.linkly.web.ClientIpResolver;
 import com.zaxxer.hikari.HikariDataSource;
 import com.zaxxer.hikari.HikariPoolMXBean;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -28,13 +26,12 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class SystemHealthService {
 
-    public enum Status { UP, DEGRADED, DOWN, DISABLED }
+    public enum Status { UP, DEGRADED, DOWN, DISABLED, PENDING }
 
     public record ComponentHealth(Status status, Long latencyMs, Map<String, Object> details) {
     }
 
-    public record HealthReport(Status status, Instant checkedAt, Map<String, ComponentHealth> components,
-                               Map<String, Object> requestInfo) {
+    public record HealthReport(Status status, Instant checkedAt, Map<String, ComponentHealth> components) {
     }
 
     private final JdbcTemplate jdbcTemplate;
@@ -46,9 +43,8 @@ public class SystemHealthService {
     private final GeoIpService geoIpService;
     private final KeepAliveService keepAliveService;
     private final SystemSettingsService settingsService;
-    private final ClientIpResolver clientIpResolver;
 
-    public HealthReport check(HttpServletRequest request) {
+    public HealthReport check() {
         Map<String, ComponentHealth> components = new LinkedHashMap<>();
         components.put("database", database());
         components.put("redis", redis());
@@ -63,7 +59,7 @@ public class SystemHealthService {
         } else if (components.values().stream().anyMatch(c -> c.status() == Status.DOWN || c.status() == Status.DEGRADED)) {
             overall = Status.DEGRADED; // core features work, an optional service is impaired
         }
-        return new HealthReport(overall, Instant.now(), components, requestInfo(request));
+        return new HealthReport(overall, Instant.now(), components);
     }
 
     private ComponentHealth database() {
@@ -153,7 +149,9 @@ public class SystemHealthService {
             return new ComponentHealth(Status.DISABLED, null, details);
         }
         details.put("pausedAfterFailure", geoIpService.isPaused());
-        return new ComponentHealth(geoIpService.isPaused() ? Status.DEGRADED : Status.UP, null, details);
+        Status status = geoIpService.isPaused() ? Status.DEGRADED
+                : geoIpService.getLastSuccessAt() == null ? Status.PENDING : Status.UP;
+        return new ComponentHealth(status, null, details);
     }
 
     private ComponentHealth keepAlive() {
@@ -183,16 +181,6 @@ public class SystemHealthService {
         details.put("processors", rt.availableProcessors());
         details.put("threads", Thread.activeCount());
         return new ComponentHealth(usedMb > maxMb * 0.9 ? Status.DEGRADED : Status.UP, null, details);
-    }
-
-    /** Helps choose TRUSTED_PROXY_COUNT: compare resolvedClientIp with your real public IP. */
-    private Map<String, Object> requestInfo(HttpServletRequest request) {
-        Map<String, Object> info = new LinkedHashMap<>();
-        info.put("remoteAddr", request.getRemoteAddr());
-        info.put("xForwardedFor", request.getHeader("X-Forwarded-For"));
-        info.put("trustedProxyCount", clientIpResolver.getTrustedProxyCount());
-        info.put("resolvedClientIp", clientIpResolver.resolve(request));
-        return info;
     }
 
     private static long millisSince(long startNanos) {

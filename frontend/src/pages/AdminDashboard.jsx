@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trash2, Shield, UserX, UserCheck } from 'lucide-react';
+import { Trash2, UserX, UserCheck } from 'lucide-react';
 import api, { errorMessage } from '../api';
 import SystemHealthPanel from '../components/SystemHealthPanel';
 
 const AdminDashboard = () => {
-  const [users, setUsers] = useState([]);
+  const [users, setUsers] = useState(null);
+  const [usersFailed, setUsersFailed] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ show: false, username: null });
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -18,7 +19,9 @@ const AdminDashboard = () => {
     try {
       const res = await api.get('/admin/users');
       setUsers(res.data);
+      setUsersFailed(false);
     } catch (err) {
+      setUsersFailed(true);
       showError(errorMessage(err, 'Error fetching users'));
     }
   }, [showError]);
@@ -53,19 +56,21 @@ const AdminDashboard = () => {
           {errorMsg}
         </div>
       )}
-      <div className="flex items-center gap-2 mb-6">
-        <Shield size={32} color="var(--accent-color)" />
-        <h1>Admin Control Panel</h1>
-      </div>
+      <header className="page-header">
+        <h1>Admin</h1>
+        <p>Check service availability and manage accounts.</p>
+      </header>
 
       <SystemHealthPanel onError={showError} />
 
       <div className="card glass">
-        <h3 className="mb-6">Registered Users ({users.length})</h3>
+        <h2 className="section-title mb-4">Accounts {users && `(${users.length})`}</h2>
+        {!users && !usersFailed && <p role="status">Loading accounts…</p>}
+        {usersFailed && <button type="button" className="btn btn-secondary" onClick={fetchUsers}>Refresh accounts</button>}
         
         <div className="flex-col gap-4">
-          {users.map(u => (
-            <div key={u.id} className="flex items-center justify-between" style={{ padding: '15px 0', borderBottom: '1px solid var(--border-color)' }}>
+          {users?.map(u => (
+            <div key={u.id} className="admin-account">
               <div>
                 <div className="flex items-center gap-2">
                   <h4 style={{ margin: 0 }}>{u.name}</h4>

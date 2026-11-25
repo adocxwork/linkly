@@ -1,180 +1,124 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Activity, RefreshCw } from 'lucide-react';
 import api, { errorMessage } from '../api';
 
-const STATUS_COLORS = {
-  UP: '#10b981',
-  DEGRADED: '#f59e0b',
-  DOWN: '#ef4444',
-  DISABLED: '#9ca3af',
+const services = [
+  ['database', 'Database'],
+  ['redis', 'Click queue'],
+  ['clickPipeline', 'Analytics processing'],
+  ['geoIp', 'Location analytics'],
+];
+
+const labels = {
+  UP: 'Operational',
+  DEGRADED: 'Limited',
+  DOWN: 'Unavailable',
+  DISABLED: 'Off',
+  PENDING: 'Waiting for traffic',
 };
 
-const LABELS = {
-  database: 'PostgreSQL (Supabase)',
-  redis: 'Redis (Upstash)',
-  clickPipeline: 'Click analytics pipeline',
-  geoIp: 'Geo-IP lookup (geojs.io)',
-  keepAlive: 'Self-ping (keep-alive)',
-  jvm: 'Backend JVM',
-};
+function Status({ value }) {
+  return <span className={`service-status status-${value.toLowerCase()}`}>{labels[value] || 'Unknown'}</span>;
+}
 
-const Badge = ({ status }) => (
-  <span style={{
-    fontSize: '0.75rem', fontWeight: 600, color: 'white', padding: '2px 8px', borderRadius: '999px',
-    background: STATUS_COLORS[status] || '#9ca3af',
-  }}>{status}</span>
-);
+function Setting({ title, description, checked, onChange, disabled }) {
+  return (
+    <label className="service-setting">
+      <span><strong>{title}</strong><small>{description}</small></span>
+      <input className="service-switch" type="checkbox" role="switch" checked={checked}
+        onChange={onChange} disabled={disabled} aria-label={title} />
+    </label>
+  );
+}
 
-const formatValue = (value) => {
-  if (value === null || value === undefined || value === '') return '—';
-  if (typeof value === 'boolean') return value ? 'yes' : 'no';
-  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) return new Date(value).toLocaleString();
-  return String(value);
-};
-
-const Toggle = ({ checked, onChange, disabled }) => (
-  <button
-    onClick={onChange}
-    disabled={disabled}
-    aria-pressed={checked}
-    style={{
-      width: '44px', height: '24px', borderRadius: '12px', border: 'none', cursor: disabled ? 'wait' : 'pointer',
-      background: checked ? '#10b981' : '#d1d5db', position: 'relative', transition: 'background 0.3s', flexShrink: 0,
-    }}
-  >
-    <div style={{
-      width: '20px', height: '20px', borderRadius: '50%', background: 'white', position: 'absolute', top: '2px',
-      left: checked ? '22px' : '2px', transition: 'left 0.3s', boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
-    }} />
-  </button>
-);
-
-const SystemHealthPanel = ({ onError }) => {
+export default function SystemHealthPanel({ onError }) {
   const [health, setHealth] = useState(null);
   const [settings, setSettings] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [expanded, setExpanded] = useState({});
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [h, s] = await Promise.all([api.get('/admin/system/health'), api.get('/admin/system/settings')]);
-      setHealth(h.data);
-      setSettings(s.data);
-    } catch (err) {
-      onError(errorMessage(err, 'Could not load system health'));
+      const [healthResponse, settingsResponse] = await Promise.all([
+        api.get('/admin/system/health'), api.get('/admin/system/settings'),
+      ]);
+      setHealth(healthResponse.data);
+      setSettings(settingsResponse.data);
+      setLoadFailed(false);
+    } catch {
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
-  }, [onError]);
+  }, []);
 
   useEffect(() => {
     refresh();
-    const timer = setInterval(refresh, 30000);
+    const timer = setInterval(refresh, 30_000);
     return () => clearInterval(timer);
   }, [refresh]);
 
-  const updateSetting = async (patch) => {
+  async function updateSetting(patch) {
     setSaving(true);
     try {
       const { data } = await api.put('/admin/system/settings', patch);
       setSettings(data);
       await refresh();
     } catch (err) {
-      onError(errorMessage(err, 'Could not update setting'));
+      onError(errorMessage(err, 'Could not update the service setting.'));
     } finally {
       setSaving(false);
     }
-  };
+  }
+
+  const settingsDisabled = !settings || saving || loading;
 
   return (
-    <>
-      <div className="card glass mb-8" style={{ marginBottom: '2rem' }}>
-        <h3 className="mb-4">Runtime switches</h3>
-        <div className="flex justify-between items-center gap-4" style={{ padding: '12px 0', borderBottom: '1px solid var(--border-color)' }}>
+    <div className="admin-service-grid">
+      <section className="card health-card" aria-labelledby="health-title">
+        <div className="health-heading">
+          <span className="feature-icon"><Activity size={21} aria-hidden="true" /></span>
           <div>
-            <h4 style={{ margin: 0 }}>Backend self-ping</h4>
-            <p className="text-secondary" style={{ fontSize: '0.85rem', margin: 0 }}>
-              Pings the backend every 10 minutes so Render's free tier does not go to sleep.
-            </p>
+            <h2 id="health-title" className="section-title">System health</h2>
+            <p>{loadFailed ? 'Couldn’t refresh the service status.' : health
+              ? `Checked at ${new Date(health.checkedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+              : 'Checking services…'}</p>
           </div>
-          <Toggle checked={!!settings?.keepAliveEnabled} disabled={!settings || saving}
-            onChange={() => updateSetting({ keepAliveEnabled: !settings.keepAliveEnabled })} />
-        </div>
-        <div className="flex justify-between items-center gap-4" style={{ padding: '12px 0' }}>
-          <div>
-            <h4 style={{ margin: 0 }}>Use Redis</h4>
-            <p className="text-secondary" style={{ fontSize: '0.85rem', margin: 0 }}>
-              When Redis is disabled or unreachable, clicks are queued in this server’s memory.
-            </p>
-          </div>
-          <Toggle checked={!!settings?.redisEnabled} disabled={!settings || saving}
-            onChange={() => updateSetting({ redisEnabled: !settings.redisEnabled })} />
-        </div>
-      </div>
-
-      <div className="card glass mb-8" style={{ marginBottom: '2rem' }}>
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="flex items-center gap-2" style={{ margin: 0 }}>
-            <Activity size={20} /> System health {health && <Badge status={health.status} />}
-          </h3>
-          <button className="btn btn-secondary" onClick={refresh} disabled={loading}>
-            <RefreshCw size={16} /> {loading ? 'Checking…' : 'Refresh'}
+          <button type="button" className="btn btn-secondary health-refresh" onClick={refresh}
+            disabled={loading || saving} aria-label="Refresh service status">
+            <RefreshCw size={16} aria-hidden="true" /> <span>Refresh</span>
           </button>
         </div>
+
         {health && (
-          <p className="text-secondary" style={{ fontSize: '0.8rem' }}>
-            Checked {new Date(health.checkedAt).toLocaleTimeString()} · refreshes every 30s · click a row for details
-          </p>
-        )}
-
-        {health && Object.entries(health.components).map(([key, component]) => (
-          <div key={key} style={{ borderBottom: '1px solid var(--border-color)', padding: '10px 0' }}>
-            <div className="flex justify-between items-center" style={{ cursor: 'pointer' }}
-              onClick={() => setExpanded({ ...expanded, [key]: !expanded[key] })}>
-              <span style={{ fontWeight: 500 }}>{LABELS[key] || key}</span>
-              <span className="flex items-center gap-2">
-                {component.latencyMs != null && <span className="text-secondary" style={{ fontSize: '0.8rem' }}>{component.latencyMs} ms</span>}
-                <Badge status={component.status} />
-              </span>
+          <>
+            <div className="health-summary">
+              <span>Overall status</span>
+              <Status value={health.status} />
             </div>
-            {expanded[key] && (
-              <table style={{ width: '100%', fontSize: '0.8rem', marginTop: '8px', tableLayout: 'fixed' }}>
-                <tbody>
-                  {Object.entries(component.details || {}).map(([k, v]) => (
-                    <tr key={k}>
-                      <td className="text-secondary" style={{ width: '40%', padding: '2px 0', verticalAlign: 'top' }}>{k}</td>
-                      <td style={{ wordBreak: 'break-word' }}>{formatValue(v)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        ))}
-
-        {health?.requestInfo && (
-          <details style={{ marginTop: '12px', fontSize: '0.8rem' }}>
-            <summary className="text-secondary" style={{ cursor: 'pointer' }}>Request IP debug (for TRUSTED_PROXY_COUNT)</summary>
-            <p className="text-secondary" style={{ margin: '6px 0' }}>
-              "resolvedClientIp" should equal your real public IP. If it shows a proxy address, adjust TRUSTED_PROXY_COUNT on Render.
-            </p>
-            <table style={{ width: '100%', tableLayout: 'fixed' }}>
-              <tbody>
-                {Object.entries(health.requestInfo).map(([k, v]) => (
-                  <tr key={k}>
-                    <td className="text-secondary" style={{ width: '40%' }}>{k}</td>
-                    <td style={{ wordBreak: 'break-word' }}>{formatValue(v)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </details>
+            <ul className="health-services">
+              {services.map(([key, label]) => {
+                const status = health.components?.[key]?.status;
+                return status && (
+                  <li key={key}><span>{label}</span><Status value={status} /></li>
+                );
+              })}
+            </ul>
+          </>
         )}
-      </div>
-    </>
-  );
-};
+      </section>
 
-export default SystemHealthPanel;
+      <section className="card" aria-labelledby="service-settings-title">
+        <h2 id="service-settings-title" className="section-title mb-4">Service settings</h2>
+        <Setting title="Keep backend awake" description="Reduce cold starts while the backend is running."
+          checked={!!settings?.keepAliveEnabled} disabled={settingsDisabled}
+          onChange={() => updateSetting({ keepAliveEnabled: !settings.keepAliveEnabled })} />
+        <Setting title="Use Redis for click events" description="Use the shared queue when Redis is available."
+          checked={!!settings?.redisEnabled} disabled={settingsDisabled}
+          onChange={() => updateSetting({ redisEnabled: !settings.redisEnabled })} />
+      </section>
+    </div>
+  );
+}

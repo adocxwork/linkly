@@ -12,6 +12,7 @@ class IpAddressesTest {
         assertThat(IpAddresses.isValid("2001:4860:4860::8888")).isTrue();
         assertThat(IpAddresses.isValid("999.1.1.1")).isFalse();
         assertThat(IpAddresses.isValid("8.8.8.8/../../admin")).isFalse();
+        assertThat(IpAddresses.isValid("::::")).isFalse();
         assertThat(IpAddresses.isValid(null)).isFalse();
     }
 
@@ -22,6 +23,8 @@ class IpAddressesTest {
         assertThat(IpAddresses.isPrivateOrLocal("192.168.1.1")).isTrue();
         assertThat(IpAddresses.isPrivateOrLocal("127.0.0.1")).isTrue();
         assertThat(IpAddresses.isPrivateOrLocal("::1")).isTrue();
+        assertThat(IpAddresses.isPrivateOrLocal("febf::1")).isTrue();
+        assertThat(IpAddresses.isPrivateOrLocal("2001:4860:4860::8888")).isFalse();
         assertThat(IpAddresses.isPrivateOrLocal("8.8.8.8")).isFalse();
         assertThat(IpAddresses.isPrivateOrLocal("172.32.0.1")).isFalse();
     }

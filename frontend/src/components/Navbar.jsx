@@ -1,66 +1,83 @@
+import { useRef, useState } from 'react';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { ArrowUpRight, LayoutDashboard, Link2, LogOut, Mail, Menu, Settings, Shield, X } from 'lucide-react';
 import { readStoredUser } from '../session';
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Link2, LogOut, Settings, LayoutDashboard, Shield, Menu, X, User, Mail } from 'lucide-react';
 
-const Navbar = () => {
+const workspaceRoutes = [
+  { to: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard },
+  { to: '/inbox', label: 'Inbox', Icon: Mail },
+  { to: '/settings', label: 'Settings', Icon: Settings },
+];
+const adminRoute = { to: '/admin', label: 'Admin', Icon: Shield };
+
+export default function Navbar() {
   const navigate = useNavigate();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const user = readStoredUser();
+  const location = useLocation();
+  const [openLocation, setOpenLocation] = useState(null);
+  const menuButton = useRef(null);
+  const user = localStorage.getItem('token') ? readStoredUser() : null;
+  const routes = user?.role === 'ROLE_ADMIN' ? [...workspaceRoutes, adminRoute] : workspaceRoutes;
+  const current = user && routes.find(({ to }) => to === location.pathname);
+  const menuOpen = openLocation === location.key;
+  const closeMenu = () => setOpenLocation(null);
 
-  const handleLogout = () => {
+  function handleLogout() {
     localStorage.removeItem('user');
     localStorage.removeItem('token');
-    navigate('/login');
-  };
-
-  const toggleMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
-  const closeMenu = () => setIsMobileMenuOpen(false);
+    closeMenu();
+    navigate('/login', { replace: true });
+  }
 
   return (
-    <nav className="navbar glass" style={{ padding: '0 20px', height: '64px' }}>
-      <Link to="/" className="nav-brand" onClick={closeMenu}>
-        <Link2 size={24} color="var(--accent-color)" />
-        Linkly
-      </Link>
-      
-      <button className="mobile-menu-btn" onClick={toggleMenu}>
-        {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-      </button>
+    <header className="site-header">
+      <a href="#main-content" className="skip-link">Skip to content</a>
+      <nav className="site-nav" aria-label="Main navigation" onKeyDown={(event) => {
+        if (event.key === 'Escape' && menuOpen) {
+          closeMenu();
+          menuButton.current?.focus();
+        }
+      }}>
+        <Link to="/" className="site-brand" onClick={closeMenu}>
+          <span className="brand-mark"><Link2 size={21} aria-hidden="true" /></span>
+          Linkly
+        </Link>
 
-      <div className={`nav-links ${isMobileMenuOpen ? 'open' : ''}`}>
-        {user ? (
-          <>
-            {user.role === 'ROLE_ADMIN' && (
-              <Link to="/admin" className="btn btn-secondary" onClick={closeMenu}>
-                <Shield size={18} /> Admin
-              </Link>
-            )}
-            <Link to="/dashboard" className="btn btn-secondary" onClick={closeMenu}>
-              <LayoutDashboard size={18} /> Dashboard
-            </Link>
-            <Link to={`/p/${user.username}`} target="_blank" className="btn btn-secondary" onClick={closeMenu}>
-              <User size={18} /> Profile
-            </Link>
-            <Link to="/inbox" className="btn btn-secondary" onClick={closeMenu}>
-              <Mail size={18} /> Inbox
-            </Link>
-            <Link to="/settings" className="btn btn-secondary" onClick={closeMenu}>
-              <Settings size={18} /> Settings
-            </Link>
-            <button onClick={() => { handleLogout(); closeMenu(); }} className="btn btn-secondary" style={{ color: 'var(--danger-color)' }}>
-              <LogOut size={18} /> Logout
-            </button>
-          </>
-        ) : (
-          <>
-            <Link to="/login" className="btn btn-secondary" onClick={closeMenu}>Login</Link>
-            <Link to="/register" className="btn btn-primary" onClick={closeMenu}>Sign Up</Link>
-          </>
-        )}
-      </div>
-    </nav>
+        {current && <span className="mobile-current">{current.label}</span>}
+        <button type="button" className="nav-menu-button" ref={menuButton}
+          aria-label={menuOpen ? 'Close navigation' : 'Open navigation'}
+          aria-expanded={menuOpen} aria-controls="site-navigation"
+          onClick={() => setOpenLocation(menuOpen ? null : location.key)}>
+          {menuOpen ? <X size={22} aria-hidden="true" /> : <Menu size={22} aria-hidden="true" />}
+        </button>
+
+        <div id="site-navigation" className={`site-navigation${menuOpen ? ' is-open' : ''}${!user ? ' is-public' : ''}`}>
+          {user ? (
+            <>
+              <div className="workspace-nav">
+                {routes.map(({ to, Icon, label }) => (
+                  <NavLink key={to} to={to} end className="nav-item" onClick={closeMenu}>
+                    <Icon size={17} aria-hidden="true" /> {label}
+                  </NavLink>
+                ))}
+              </div>
+              <div className="nav-actions">
+                <a href={`/p/${encodeURIComponent(user.username)}`} target="_blank" rel="noopener noreferrer"
+                  className="nav-profile" aria-label="View public profile (opens in a new tab)" onClick={closeMenu}>
+                  View public profile <ArrowUpRight size={17} aria-hidden="true" />
+                </a>
+                <button type="button" className="nav-item nav-signout" onClick={handleLogout}>
+                  <LogOut size={16} aria-hidden="true" /> Sign out
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="nav-actions">
+              <NavLink to="/login" end className="nav-item" onClick={closeMenu}>Sign in</NavLink>
+              <NavLink to="/register" end className="btn btn-primary nav-register" onClick={closeMenu}>Create account</NavLink>
+            </div>
+          )}
+        </div>
+      </nav>
+    </header>
   );
-};
-
-export default Navbar;
+}

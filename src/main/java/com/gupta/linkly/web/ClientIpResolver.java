@@ -11,24 +11,29 @@ import java.util.List;
 /**
  * Works out the real client IP behind reverse proxies.
  *
- * <p>Each proxy APPENDS the address it received the request from to X-Forwarded-For, so the
- * header looks like {@code <whatever the client sent>, ..., <added by our proxy>}. Everything to
- * the left of what our own proxies added is client-controlled and can be forged. With N trusted
- * proxies, the real client IP is therefore the N-th entry counting from the RIGHT.
- *
- * <p>The old code used the LEFT-most entry, so anyone could send
- * {@code X-Forwarded-For: 1.2.3.4} to bypass rate limits and fake analytics.
+ * <p>Trust the edge's single IP header only when the deployment explicitly enables it.
+ * Otherwise select the configured hop from the right of X-Forwarded-For. Unproxied
+ * deployments use the socket address.
  */
 @Component
 public class ClientIpResolver {
 
     private final int trustedProxyCount;
+    private final boolean trustCloudflareClientIp;
 
-    public ClientIpResolver(@Value("${app.trusted-proxy-count:0}") int trustedProxyCount) {
+    public ClientIpResolver(@Value("${app.trusted-proxy-count:0}") int trustedProxyCount,
+                            @Value("${app.trust-cloudflare-client-ip:false}") boolean trustCloudflareClientIp) {
         this.trustedProxyCount = Math.max(0, trustedProxyCount);
+        this.trustCloudflareClientIp = trustCloudflareClientIp;
     }
 
     public String resolve(HttpServletRequest request) {
+        if (trustCloudflareClientIp) {
+            String edgeClientIp = request.getHeader("CF-Connecting-IP");
+            if (edgeClientIp != null && IpAddresses.isValid(edgeClientIp.trim())) {
+                return edgeClientIp.trim();
+            }
+        }
         String forwarded = request.getHeader("X-Forwarded-For");
         if (trustedProxyCount == 0 || forwarded == null || forwarded.isBlank()) {
             return request.getRemoteAddr();
@@ -39,9 +44,5 @@ public class ClientIpResolver {
         }
         String candidate = hops.get(hops.size() - trustedProxyCount);
         return IpAddresses.isValid(candidate) ? candidate : request.getRemoteAddr();
-    }
-
-    public int getTrustedProxyCount() {
-        return trustedProxyCount;
     }
 }

@@ -5,6 +5,7 @@ import Navbar from './components/Navbar';
 
 // Each page is loaded on demand, so visitors of a public profile don't download the
 // dashboard, charts or admin code.
+const Home = lazy(() => import('./pages/Home'));
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -37,10 +38,10 @@ function App() {
   return (
     <BrowserRouter>
       <Navbar />
-      <div className="container" style={{ marginTop: '2rem' }}>
+      <main id="main-content" className="container app-content" tabIndex={-1}>
         <Suspense fallback={<div className="text-center text-secondary mt-8">Loading…</div>}>
           <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" />} />
+            <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
@@ -52,7 +53,7 @@ function App() {
             <Route path="*" element={<ErrorPage variant="notFound" />} />
           </Routes>
         </Suspense>
-      </div>
+      </main>
     </BrowserRouter>
   );
 }

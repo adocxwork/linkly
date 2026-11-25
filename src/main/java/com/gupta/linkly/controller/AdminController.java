@@ -7,7 +7,6 @@ import com.gupta.linkly.system.SystemHealthService;
 import com.gupta.linkly.system.SystemSettingsService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -43,8 +42,8 @@ public class AdminController {
 
     @Operation(summary = "Live status of PostgreSQL, Redis, the click pipeline, Geo-IP, self-ping and JVM")
     @GetMapping("/system/health")
-    public SystemHealthService.HealthReport systemHealth(HttpServletRequest request) {
-        return healthService.check(request);
+    public SystemHealthService.HealthReport systemHealth() {
+        return healthService.check();
     }
 
     @GetMapping("/system/settings")

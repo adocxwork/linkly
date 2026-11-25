@@ -1,11 +1,10 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Copy, Check, Trash2, Power, Plus, GripVertical, BarChart2 } from 'lucide-react';
+import { Copy, Check, Trash2, Power, Plus, GripVertical, BarChart2, Link2, MousePointer2, ArrowUpRight } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { readStoredUser } from '../session';
 import api, { errorMessage, shortLinkUrl } from '../api';
 // Charts library is only downloaded when someone opens analytics.
 const AnalyticsModal = lazy(() => import('../components/AnalyticsModal'));
@@ -22,9 +21,10 @@ const Dashboard = () => {
   const [deleteModal, setDeleteModal] = useState({ show: false, linkId: null });
   const [analyticsModal, setAnalyticsModal] = useState({ show: false, link: null });
   const [errorMsg, setErrorMsg] = useState('');
-  const user = readStoredUser() || {};
+  const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
 
-  const { register, handleSubmit, formState: { errors }, reset } = useForm({
+  const { register, handleSubmit, formState: { errors, isSubmitting }, reset } = useForm({
     resolver: zodResolver(linkSchema),
     defaultValues: { title: '', originalUrl: '', customAlias: '' }
   });
@@ -34,6 +34,7 @@ const Dashboard = () => {
   }, []);
 
   const fetchData = async () => {
+    setLoadFailed(false);
     try {
       const [linksRes, statsRes] = await Promise.all([
         api.get('/links'),
@@ -42,7 +43,10 @@ const Dashboard = () => {
       setLinks(linksRes.data);
       setStats(statsRes.data);
     } catch (err) {
+      setLoadFailed(true);
       showError(errorMessage(err, 'Could not load your links'));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -80,10 +84,14 @@ const Dashboard = () => {
     }
   };
 
-  const copyToClipboard = (shortUrl, id) => {
-    navigator.clipboard.writeText(shortLinkUrl(shortUrl));
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+  const copyToClipboard = async (shortUrl, id) => {
+    try {
+      await navigator.clipboard.writeText(shortLinkUrl(shortUrl));
+      setCopiedId(id);
+      setTimeout(() => setCopiedId((current) => current === id ? null : current), 2000);
+    } catch {
+      showError('Copy failed. You can select and copy the short URL below.');
+    }
   };
 
   const handleDragEnd = async (result) => {
@@ -112,7 +120,10 @@ const Dashboard = () => {
 
   return (
     <div style={{ paddingBottom: '4rem' }}>
-      <h1 className="mb-6">Hello, {user.name}</h1>
+      <header className="page-header">
+        <h1>Dashboard</h1>
+        <p>Manage your links and track how people use them.</p>
+      </header>
       
       {errorMsg && (
         <div className="toast error mb-4 text-center" style={{ position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 9999 }}>
@@ -120,55 +131,50 @@ const Dashboard = () => {
         </div>
       )}
 
-      <div className="flex flex-responsive gap-4 mb-8">
-        <div className="card glass" style={{ flex: 1 }}>
-          <div className="text-secondary mb-2">Total Links</div>
-          <h2>{stats.totalLinks}</h2>
+      <div className="dashboard-stats">
+        <div className="card stat-card">
+          <span className="feature-icon"><Link2 size={20} aria-hidden="true" /></span>
+          <div><p>Total links</p><strong>{loading || loadFailed ? '—' : stats.totalLinks}</strong></div>
         </div>
-        <div className="card glass" style={{ flex: 1 }}>
-          <div className="text-secondary mb-2">Total Clicks</div>
-          <h2>{stats.totalClicks}</h2>
+        <div className="card stat-card">
+          <span className="feature-icon"><MousePointer2 size={20} aria-hidden="true" /></span>
+          <div><p>Total clicks</p><strong>{loading || loadFailed ? '—' : stats.totalClicks}</strong></div>
         </div>
       </div>
 
       <div className="card glass mb-8">
-        <h3 className="mb-4">Create New Link</h3>
+        <h2 className="section-title mb-4">Create a short link</h2>
         <form onSubmit={handleSubmit(onSubmit)} className="flex-col gap-4">
-          <div className="flex flex-responsive gap-4 items-start flex-wrap">
-            <div style={{ flex: '1 1 200px' }}>
-              <input 
-                type="text" 
-                placeholder="Title (e.g. My Twitter)" 
-                className="form-control" 
+          <div className="create-link-fields">
+            <div>
+              <label className="form-label" htmlFor="link-title">Link name</label>
+              <input id="link-title" type="text" placeholder="Engineering notes" className="form-control"
                 {...register('title')}
               />
               {errors.title && <p className="text-danger" style={{ fontSize: '0.8rem', marginTop: '4px' }}>{errors.title.message}</p>}
             </div>
-            <div style={{ flex: '2 1 300px' }}>
-              <input 
-                type="url" 
-                placeholder="https://example.com" 
-                className="form-control" 
+            <div>
+              <label className="form-label" htmlFor="link-originalUrl">Destination URL</label>
+              <input id="link-originalUrl" type="url" placeholder="https://example.com" className="form-control"
                 {...register('originalUrl')}
               />
               {errors.originalUrl && <p className="text-danger" style={{ fontSize: '0.8rem', marginTop: '4px' }}>{errors.originalUrl.message}</p>}
             </div>
-            <div style={{ flex: '1 1 200px' }}>
-              <input 
-                type="text" 
-                placeholder="Custom Alias (optional)" 
-                className="form-control" 
+            <div>
+              <label className="form-label" htmlFor="link-customAlias">Custom alias (optional)</label>
+              <input id="link-customAlias" type="text" placeholder="engineering-notes" className="form-control"
                 {...register('customAlias')}
               />
               {errors.customAlias && <p className="text-danger" style={{ fontSize: '0.8rem', marginTop: '4px' }}>{errors.customAlias.message}</p>}
             </div>
-            <button type="submit" className="btn btn-primary" style={{ height: '48px', flexShrink: 0 }}>
-              <Plus size={18} /> Add
+            <button type="submit" className="btn btn-primary create-link-submit" disabled={isSubmitting}>
+              <Plus size={18} aria-hidden="true" /> {isSubmitting ? 'Creating…' : 'Create link'}
             </button>
           </div>
         </form>
       </div>
 
+      <h2 className="section-title mb-4">Your links</h2>
       <DragDropContext onDragEnd={handleDragEnd}>
         <Droppable droppableId="links">
           {(provided) => (
@@ -183,7 +189,7 @@ const Dashboard = () => {
                     <div
                       ref={provided.innerRef}
                       {...provided.draggableProps}
-                      className="card glass flex flex-responsive justify-between gap-4"
+                      className="card link-row"
                       style={{ 
                         padding: '20px', 
                         opacity: link.active ? 1 : 0.6,
@@ -192,7 +198,7 @@ const Dashboard = () => {
                         boxShadow: snapshot.isDragging ? '0 10px 20px rgba(0,0,0,0.1)' : undefined
                       }}
                     >
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-4 link-description">
                         <div 
                           {...provided.dragHandleProps} 
                           className="text-secondary" 
@@ -212,10 +218,12 @@ const Dashboard = () => {
                           <div className="text-secondary" style={{ fontSize: '0.9rem', marginBottom: '8px', textDecoration: link.active ? 'none' : 'line-through' }}>
                             {link.originalUrl}
                           </div>
-                          <div className="flex items-center gap-4">
-                            <span style={{ color: 'var(--accent-color)', fontWeight: 500, textDecoration: link.active ? 'none' : 'line-through' }}>
-                              {shortLinkUrl(link.shortUrl).replace(/^https?:\/\//, '')}
-                            </span>
+                          <div className="link-meta">
+                            {link.active ? (
+                              <a className="short-link" href={shortLinkUrl(link.shortUrl)} target="_blank" rel="noopener noreferrer">
+                                {shortLinkUrl(link.shortUrl).replace(/^https?:\/\//, '')} <ArrowUpRight size={15} aria-hidden="true" />
+                              </a>
+                            ) : <span className="text-secondary">{link.shortUrl}</span>}
                             <span className="text-secondary" style={{ fontSize: '0.85rem' }}>{link.clickCount} clicks</span>
                           </div>
                         </div>
@@ -224,19 +232,18 @@ const Dashboard = () => {
                       <div className="flex items-center gap-2">
                         <button 
                           onClick={() => setAnalyticsModal({ show: true, link })} 
-                          className="btn btn-secondary btn-icon"
+                          className="btn btn-secondary link-action"
                           title="View Analytics"
-                          style={{ color: 'var(--accent-color)' }}
                         >
-                          <BarChart2 size={18} />
+                          <BarChart2 size={17} aria-hidden="true" /> Analytics
                         </button>
 
                         <button 
                           onClick={() => copyToClipboard(link.shortUrl, link.id)} 
-                          className="btn btn-secondary btn-icon"
+                          className="btn btn-secondary link-action"
                           title="Copy Link"
                         >
-                          {copiedId === link.id ? <Check size={18} color="#34c759" /> : <Copy size={18} />}
+                          {copiedId === link.id ? <><Check size={17} aria-hidden="true" /> Copied</> : <><Copy size={17} aria-hidden="true" /> Copy</>}
                         </button>
                         
                         <button 
@@ -261,8 +268,15 @@ const Dashboard = () => {
                 </Draggable>
               ))}
               {provided.placeholder}
-              {links.length === 0 && (
-                <div className="text-center text-secondary mt-8">No links found. Create one above!</div>
+              {loading && <p role="status" className="card empty-state">Loading your links…</p>}
+              {!loading && loadFailed && (
+                <div className="card empty-state">
+                  <p>Couldn’t load your links.</p>
+                  <button type="button" className="btn btn-secondary" onClick={fetchData}>Try again</button>
+                </div>
+              )}
+              {!loading && !loadFailed && links.length === 0 && (
+                <p className="card empty-state">Your short links will appear here. Create one above to get started.</p>
               )}
             </div>
           )}
