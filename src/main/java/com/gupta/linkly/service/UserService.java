@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -28,13 +29,13 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
 
-    public UserProfileResponse getProfile(String username) {
-        return UserProfileResponse.from(getUser(username));
+    public UserProfileResponse getProfile(UUID accountId) {
+        return UserProfileResponse.from(getUser(accountId));
     }
 
     @Transactional
-    public UserProfileResponse updateProfile(String username, UpdateProfileRequest request) {
-        User user = getUserForUpdate(username);
+    public UserProfileResponse updateProfile(UUID accountId, UpdateProfileRequest request) {
+        User user = getUserForUpdate(accountId);
         user.setName(request.getName().trim());
         user.setBio(AuthService.blankToNull(request.getBio()));
         return UserProfileResponse.from(user);
@@ -68,8 +69,8 @@ public class UserService {
      * the current session is returned so the user stays logged in here.
      */
     @Transactional
-    public AuthResponse updateSettings(String username, ChangeSettingsRequest request) {
-        User user = getUserForUpdate(username);
+    public AuthResponse updateSettings(UUID accountId, ChangeSettingsRequest request) {
+        User user = getUserForUpdate(accountId);
 
         String newEmail = AuthService.blankToNull(request.getEmail());
         if (newEmail != null) {
@@ -125,13 +126,13 @@ public class UserService {
 
     /** "Log out of all devices": every token issued so far stops working. */
     @Transactional
-    public void revokeAllSessions(String username) {
-        getUserForUpdate(username).bumpTokenVersion();
+    public void revokeAllSessions(UUID accountId) {
+        getUserForUpdate(accountId).bumpTokenVersion();
     }
 
     @Transactional
-    public void deleteAccount(String username) {
-        User user = getUserForUpdate(username);
+    public void deleteAccount(UUID accountId) {
+        User user = getUserForUpdate(accountId);
         if (user.isAdmin()) {
             throw new ForbiddenException("The admin account cannot be deleted");
         }
@@ -169,8 +170,13 @@ public class UserService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
-    private User getUser(String username) {
-        return userRepository.findByUsername(username)
+    private User getUserForUpdate(UUID accountId) {
+        return userRepository.findByIdForUpdate(accountId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+    }
+
+    private User getUser(UUID accountId) {
+        return userRepository.findById(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 }

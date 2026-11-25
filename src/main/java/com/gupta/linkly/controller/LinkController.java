@@ -7,7 +7,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -23,39 +23,39 @@ public class LinkController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public LinkResponse addLink(Authentication auth, @Valid @RequestBody LinkRequest request) {
-        return linkService.addLink(auth.getName(), request);
+    public LinkResponse addLink(@AuthenticationPrincipal(expression = "user.id") UUID accountId, @Valid @RequestBody LinkRequest request) {
+        return linkService.addLink(accountId, request);
     }
 
     @GetMapping
-    public List<LinkResponse> getAllLinks(Authentication auth) {
-        return linkService.getAllLinks(auth.getName());
+    public List<LinkResponse> getAllLinks(@AuthenticationPrincipal(expression = "user.id") UUID accountId) {
+        return linkService.getAllLinks(accountId);
     }
 
     @PutMapping("/{id}")
-    public LinkResponse updateLink(Authentication auth, @PathVariable UUID id, @Valid @RequestBody LinkRequest request) {
-        return linkService.updateLink(auth.getName(), id, request);
+    public LinkResponse updateLink(@AuthenticationPrincipal(expression = "user.id") UUID accountId, @PathVariable UUID id, @Valid @RequestBody LinkRequest request) {
+        return linkService.updateLink(accountId, id, request);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteLink(Authentication auth, @PathVariable UUID id) {
-        linkService.deleteLink(auth.getName(), id);
+    public ResponseEntity<Void> deleteLink(@AuthenticationPrincipal(expression = "user.id") UUID accountId, @PathVariable UUID id) {
+        linkService.deleteLink(accountId, id);
         return ResponseEntity.noContent().build();
     }
 
     @PutMapping("/reorder")
-    public ResponseEntity<Void> reorderLinks(Authentication auth, @Valid @RequestBody ReorderRequest request) {
-        linkService.reorderLinks(auth.getName(), request.getLinkIds());
+    public ResponseEntity<Void> reorderLinks(@AuthenticationPrincipal(expression = "user.id") UUID accountId, @Valid @RequestBody ReorderRequest request) {
+        linkService.reorderLinks(accountId, request.getLinkIds());
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/dashboard")
-    public DashboardResponse getDashboard(Authentication auth) {
-        return linkService.getDashboard(auth.getName());
+    public DashboardResponse getDashboard(@AuthenticationPrincipal(expression = "user.id") UUID accountId) {
+        return linkService.getDashboard(accountId);
     }
 
     @GetMapping("/{id}/analytics")
-    public AnalyticsResponse getLinkAnalytics(Authentication auth, @PathVariable UUID id) {
-        return linkService.getLinkAnalytics(auth.getName(), id);
+    public AnalyticsResponse getLinkAnalytics(@AuthenticationPrincipal(expression = "user.id") UUID accountId, @PathVariable UUID id) {
+        return linkService.getLinkAnalytics(accountId, id);
     }
 }

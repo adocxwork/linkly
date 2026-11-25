@@ -51,11 +51,11 @@ class LinkServiceTest {
 
     @Test
     void addLinkGeneratesCodeAndPutsNewLinkFirst() {
-        when(userRepository.findByUsernameForUpdate("alice")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
         when(urlShortenerService.generateShortUrl()).thenReturn("abc1234");
         when(linkRepository.findMinSortOrder(user.getId())).thenReturn(0);
 
-        LinkResponse response = linkService.addLink("alice", request(null));
+        LinkResponse response = linkService.addLink(user.getId(), request(null));
 
         ArgumentCaptor<Link> saved = ArgumentCaptor.forClass(Link.class);
         verify(linkRepository).saveAndFlush(saved.capture());
@@ -65,9 +65,9 @@ class LinkServiceTest {
 
     @Test
     void addLinkRejectsTakenAlias() {
-        when(userRepository.findByUsernameForUpdate("alice")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
         when(linkRepository.existsByShortUrl("taken")).thenReturn(true);
-        assertThatThrownBy(() -> linkService.addLink("alice", request("taken")))
+        assertThatThrownBy(() -> linkService.addLink(user.getId(), request("taken")))
                 .isInstanceOf(DuplicateResourceException.class);
         verify(linkRepository, never()).saveAndFlush(any());
     }
@@ -96,7 +96,7 @@ class LinkServiceTest {
     @Test
     void rejectsUrlsThatCannotBeRedirectedTo() {
         LinkRequest bad = new LinkRequest("x", "https://example.com/a|b", true, null);
-        assertThatThrownBy(() -> linkService.addLink("alice", bad))
+        assertThatThrownBy(() -> linkService.addLink(user.getId(), bad))
                 .isInstanceOf(com.gupta.linkly.exception.BadRequestException.class);
         verifyNoInteractions(linkRepository);
     }
@@ -104,8 +104,9 @@ class LinkServiceTest {
     @Test
     void cannotUpdateSomeoneElsesLink() {
         UUID id = UUID.randomUUID();
-        when(linkRepository.findByIdAndUserUsername(id, "mallory")).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> linkService.updateLink("mallory", id, request(null)))
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+        when(linkRepository.findByIdAndUserId(id, user.getId())).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> linkService.updateLink(user.getId(), id, request(null)))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 

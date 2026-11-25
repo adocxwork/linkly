@@ -46,9 +46,9 @@ public class LinkService {
     // ------------------------------------------------------------------ owner CRUD
 
     @Transactional
-    public LinkResponse addLink(String username, LinkRequest request) {
+    public LinkResponse addLink(UUID accountId, LinkRequest request) {
         requireRedirectableUrl(request.getOriginalUrl());
-        User user = getUserForUpdate(username);
+        User user = getUserForUpdate(accountId);
         if (linkRepository.countByUserId(user.getId()) >= maxLinksPerUser) {
             throw new BadRequestException("You can have at most " + maxLinksPerUser + " links");
         }
@@ -76,17 +76,17 @@ public class LinkService {
         return LinkResponse.from(link);
     }
 
-    public List<LinkResponse> getAllLinks(String username) {
-        User user = getUser(username);
-        return linkRepository.findByUserIdOrderBySortOrderAscCreatedAtDesc(user.getId()).stream()
+    public List<LinkResponse> getAllLinks(UUID accountId) {
+        return linkRepository.findByUserIdOrderBySortOrderAscCreatedAtDesc(accountId).stream()
                 .map(LinkResponse::from)
                 .toList();
     }
 
     @Transactional
-    public LinkResponse updateLink(String username, UUID linkId, LinkRequest request) {
+    public LinkResponse updateLink(UUID accountId, UUID linkId, LinkRequest request) {
         requireRedirectableUrl(request.getOriginalUrl());
-        Link link = getOwnedLink(linkId, username);
+        getUserForUpdate(accountId);
+        Link link = getOwnedLink(linkId, accountId);
         link.setTitle(request.getTitle().trim());
         link.setOriginalUrl(request.getOriginalUrl().trim());
         if (request.getActive() != null) {
@@ -96,15 +96,16 @@ public class LinkService {
     }
 
     @Transactional
-    public void deleteLink(String username, UUID linkId) {
-        Link link = getOwnedLink(linkId, username);
+    public void deleteLink(UUID accountId, UUID linkId) {
+        getUserForUpdate(accountId);
+        Link link = getOwnedLink(linkId, accountId);
         linkRepository.delete(link); // click rows are removed by ON DELETE CASCADE
     }
 
     /** Ids not owned by the user are ignored; links not mentioned keep their relative order after these. */
     @Transactional
-    public void reorderLinks(String username, List<UUID> orderedIds) {
-        User user = getUserForUpdate(username);
+    public void reorderLinks(UUID accountId, List<UUID> orderedIds) {
+        User user = getUserForUpdate(accountId);
         Map<UUID, Link> owned = linkRepository.findByUserIdOrderBySortOrderAscCreatedAtDesc(user.getId()).stream()
                 .collect(Collectors.toMap(Link::getId, Function.identity(), (first, second) -> first, LinkedHashMap::new));
         int position = 0;
@@ -119,11 +120,10 @@ public class LinkService {
         }
     }
 
-    public DashboardResponse getDashboard(String username) {
-        User user = getUser(username);
+    public DashboardResponse getDashboard(UUID accountId) {
         return DashboardResponse.builder()
-                .totalLinks(linkRepository.countByUserId(user.getId()))
-                .totalClicks(linkRepository.sumClickCountByUserId(user.getId()))
+                .totalLinks(linkRepository.countByUserId(accountId))
+                .totalClicks(linkRepository.sumClickCountByUserId(accountId))
                 .build();
     }
 
@@ -135,17 +135,17 @@ public class LinkService {
         LinkRepository.RedirectTarget target = linkRepository.findRedirectTarget(shortUrl)
                 .filter(row -> Boolean.TRUE.equals(row.getActive()) && !Boolean.TRUE.equals(row.getOwnerSuspended()))
                 .orElseThrow(() -> new ResourceNotFoundException("Link not found"));
-        requireRedirectableUrl(target.getOriginalUrl());
+        URI destination = requireRedirectableUrl(target.getOriginalUrl());
         if (recordClick) {
             clickEventPublisher.publish(target.getId(), clientIp, userAgent);
         }
-        return target.getOriginalUrl();
+        return destination.toASCIIString();
     }
 
     // ------------------------------------------------------------------ analytics
 
-    public AnalyticsResponse getLinkAnalytics(String username, UUID linkId) {
-        Link link = getOwnedLink(linkId, username);
+    public AnalyticsResponse getLinkAnalytics(UUID accountId, UUID linkId) {
+        Link link = getOwnedLink(linkId, accountId);
         LocalDate today = LocalDate.now();
         LocalDate firstDay = today.minusDays(ANALYTICS_DAYS - 1L);
 
@@ -187,31 +187,27 @@ public class LinkService {
      * Bean validation accepts some URLs that cannot be sent in an HTTP Location header
      * (e.g. containing "|" or "^"). Reject them up front instead of failing at redirect time.
      */
-    private static void requireRedirectableUrl(String url) {
+    private static URI requireRedirectableUrl(String url) {
         try {
             URI uri = new URI(url.trim());
             if (uri.getHost() == null || uri.getUserInfo() != null
                     || !("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))) {
                 throw new BadRequestException("URL must be an HTTP(S) address with a host and no embedded credentials");
             }
+            return uri;
         } catch (URISyntaxException e) {
             throw new BadRequestException("URL contains characters that are not allowed; please encode them");
         }
     }
 
-    private User getUserForUpdate(String username) {
-        return userRepository.findByUsernameForUpdate(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
-
-    private User getUser(String username) {
-        return userRepository.findByUsername(username)
+    private User getUserForUpdate(UUID accountId) {
+        return userRepository.findByIdForUpdate(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
     /** "Not yours" and "doesn't exist" both return 404, so link ids cannot be probed. */
-    private Link getOwnedLink(UUID linkId, String username) {
-        return linkRepository.findByIdAndUserUsername(linkId, username)
+    private Link getOwnedLink(UUID linkId, UUID accountId) {
+        return linkRepository.findByIdAndUserId(linkId, accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Link not found"));
     }
 }

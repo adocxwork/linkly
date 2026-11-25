@@ -43,25 +43,23 @@ public class MessageService {
                 .build());
     }
 
-    public List<MessageResponse> getUserMessages(String username, LocalDateTime before, UUID beforeId) {
+    public List<MessageResponse> getUserMessages(UUID accountId, LocalDateTime before, UUID beforeId) {
         if ((before == null) != (beforeId == null)) {
             throw new BadRequestException("Supply both inbox cursor fields");
         }
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         PageRequest first = PageRequest.of(0, INBOX_LIMIT);
         List<Message> messages = before == null
-                ? messageRepository.findByUserIdOrderByCreatedAtDescIdDesc(user.getId(), first)
-                : messageRepository.findOlder(user.getId(), before, beforeId, first);
+                ? messageRepository.findByUserIdOrderByCreatedAtDescIdDesc(accountId, first)
+                : messageRepository.findOlder(accountId, before, beforeId, first);
         return messages.stream()
                 .map(MessageResponse::from)
                 .toList();
     }
 
     @Transactional
-    public void deleteMessage(String username, UUID messageId) {
+    public void deleteMessage(UUID accountId, UUID messageId) {
         // Not found and "belongs to someone else" look the same, so IDs cannot be probed.
-        Message message = messageRepository.findByIdAndUserUsername(messageId, username)
+        Message message = messageRepository.findByIdAndUserId(messageId, accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Message not found"));
         messageRepository.delete(message);
     }

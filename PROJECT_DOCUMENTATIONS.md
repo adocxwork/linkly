@@ -1,82 +1,108 @@
-# Linkly project documentation
+# Linkly documentation
 
-## Architecture
+## Product overview
 
-Linkly runs one Spring Boot process and a React single-page app. Vercel serves the frontend. Render runs the API and the scheduled analytics worker. PostgreSQL on Supabase stores accounts, links, inbox messages and analytics. Upstash Redis carries click events when available. Spring Security protects private routes and Flyway versions the schema.
+Linkly is a web app for publishing a public link page and measuring traffic on short URLs. An account owner creates links, selects their order, and decides which links appear on their profile. Visitors can open a profile or follow a short link without an account. Owners can optionally publish a UPI payment QR and let visitors send messages. Linkly displays payment instructions through the QR and does not process payments.
+
+The dashboard shows per-link click totals, estimated unique visitors, device and browser breakdowns, country estimates, and a 30-day click history. The inbox and detailed analytics are private to their owner. Administrators can inspect service health, adjust Redis usage and self-ping, and suspend or remove accounts.
+
+## System layout
+
+| Component | Responsibility |
+| --- | --- |
+| React and Vite on Vercel | Public pages, dashboard, settings, inbox, and admin interface. Vite proxies local development requests to Spring Boot. |
+| Spring Boot on Render | REST API, authentication, redirects, link and account operations, and a scheduled analytics worker. |
+| PostgreSQL on Supabase | Source of truth for accounts, links, messages, analytics events, and runtime settings. Flyway manages migrations. |
+| Redis Streams on Upstash | Queue for click events. Linkly can run with a bounded local queue when Redis is unavailable. |
+| GeoJS | Optional country and city enrichment for public IP addresses on click events. |
 
 ```mermaid
 flowchart LR
-    Creator --> Vercel[React on Vercel]
-    Vercel -->|REST and bearer token| API[Spring Boot on Render]
-    Visitor -->|"GET /r/{code}"| API
-    API -->|Read link and account| PG[(PostgreSQL)]
-    API -->|302| Destination
-    API -.->|Enqueue click| Publisher[Background publisher]
-    Publisher --> Stream[(Redis Stream)]
-    Publisher -.-> Buffer[Bounded local queue]
-    Stream --> Worker[Scheduled consumer]
+    Browser[Browser] --> Frontend[React app]
+    Browser -->|Short URL| API[Spring Boot API]
+    Frontend -->|REST| API
+    API -->|Read link and owner| DB[(PostgreSQL)]
+    API -->|HTTP 302| Target[Destination]
+    API -.->|Offer click event| Publisher[Background publisher]
+    Publisher -->|XADD| Redis[(Redis stream)]
+    Publisher -.-> Buffer[Local queue]
+    Redis -->|Consumer group| Worker[Analytics worker]
     Buffer --> Worker
-    Worker -.->|Optional location estimate| GeoJS
-    Worker -->|Commit events and counters| PG
-    Worker -.->|Acknowledge committed batch| Stream
+    Worker -.->|Location lookup| GeoJS
+    Worker -->|Commit rows and counters| DB
+    Worker -.->|XACK after commit| Redis
 ```
 
-| Follow this flow | Read these classes |
+## User flows and API
+
+| Flow | API or route | Access |
+| --- | --- | --- |
+| Register or sign in | `POST /api/auth/register`, `POST /api/auth/login` | Public |
+| View a profile | `/p/{username}`, backed by `GET /api/public/u/{username}` | Public |
+| Follow a short URL | `GET /r/{code}` | Public |
+| Send a message | `POST /api/public/u/{username}/messages` | Public when the creator enables messages |
+| Create, edit, reorder, or remove links | `/api/links`, `/api/links/{id}`, `/api/links/reorder` | Owner |
+| Read dashboard and analytics | `GET /api/links/dashboard`, `GET /api/links/{id}/analytics` | Owner |
+| Read or delete inbox messages | `GET /api/messages`, `DELETE /api/messages/{id}` | Owner |
+| Edit account settings or revoke sessions | `PUT /api/users/settings`, `POST /api/users/me/revoke-sessions` | Owner |
+| Manage accounts and service settings | `/api/admin/users`, `/api/admin/system/health`, `/api/admin/system/settings` | Administrator |
+
+[OpenAPI explorer](https://linkly-amwf.onrender.com/swagger-ui/index.html)
+
+### Links and profiles
+
+A link contains a display title, destination URL, short code, active flag, and sort position. Linkly accepts HTTP and HTTPS destinations and can generate a code or use a custom alias supplied by the owner. A uniqueness constraint on the code resolves collisions. A creator can keep a link for later by disabling it. The public profile returns active links in the creator’s chosen order and excludes private account fields and click counts.
+
+### Redirects and analytics
+
+1. The request passes a per-IP limit. A database lookup reads the destination and the current link and owner status. Invalid or disabled links lead to a frontend error page. Valid links return HTTP `302` with `Cache-Control: no-store`. Unicode path and query characters are encoded for the `Location` header. HEAD requests resolve the destination without recording a click.
+2. For a GET request from a visitor, the application offers a click event with a stable UUID to a bounded background executor. Recognized bots and preview clients are skipped. The publisher uses Redis `XADD`, or places the event in a local queue when Redis is unavailable or the executor is saturated.
+3. The scheduled worker checks local work every two seconds by default. It checks Redis when this instance publishes or when a periodic sweep is due. Redis pending entries are read before fresh entries. The fixed consumer name lets a replacement process on the same single-instance deployment pick up pending work.
+4. The worker looks up uncached public IPs with GeoJS before opening a database transaction. Timeouts and provider failures leave the location unknown and pause fresh lookups temporarily. The click can still be stored.
+5. PostgreSQL inserts events using `ON CONFLICT (id) DO NOTHING` and updates link counters for the rows inserted by the same transaction. After the transaction commits, the worker acknowledges the batch. If the acknowledgement is lost, the next delivery does not increment the counter again.
+
+Source entry points include [LinkService](src/main/java/com/gupta/linkly/service/LinkService.java), the [stream worker](src/main/java/com/gupta/linkly/analytics/ClickStreamWorker.java), and the [batch writer](src/main/java/com/gupta/linkly/analytics/ClickBatchWriter.java).
+
+### Accounts and inbox
+
+Passwords are hashed with BCrypt. The database enforces case-insensitive uniqueness for usernames and email addresses. The API verifies the token signature, expiry, account UUID, token version, and account state. Private link and message queries use that UUID. Password changes, global sign-out, and suspension advance the version, invalidating older tokens. The frontend stores the bearer token in local storage.
+
+Anonymous messages go only to a creator with messaging enabled. An inbox request returns a page of newest messages first. To fetch older messages, supply both `before` and `beforeId` from the last item on the previous page. The timestamp and message UUID together give a stable order when timestamps match.
+
+## Database and privacy
+
+| Table | Stores |
 | --- | --- |
-| Login | [AuthController](src/main/java/com/gupta/linkly/controller/AuthController.java) → [AuthService](src/main/java/com/gupta/linkly/service/AuthService.java) → [JwtUtil](src/main/java/com/gupta/linkly/security/JwtUtil.java) |
-| Protected API | [SecurityConfig](src/main/java/com/gupta/linkly/security/SecurityConfig.java) → [JwtAuthenticationFilter](src/main/java/com/gupta/linkly/security/JwtAuthenticationFilter.java) → service and repository |
-| Short link | [RateLimitingFilter](src/main/java/com/gupta/linkly/security/RateLimitingFilter.java) → [RedirectController](src/main/java/com/gupta/linkly/controller/RedirectController.java) → [LinkService](src/main/java/com/gupta/linkly/service/LinkService.java) |
-| Click storage | [ClickEventPublisher](src/main/java/com/gupta/linkly/analytics/ClickEventPublisher.java) → [ClickStreamWorker](src/main/java/com/gupta/linkly/analytics/ClickStreamWorker.java) → [ClickProcessor](src/main/java/com/gupta/linkly/analytics/ClickProcessor.java) → [ClickBatchWriter](src/main/java/com/gupta/linkly/analytics/ClickBatchWriter.java) |
-| Public profile and inbox | [PublicController](src/main/java/com/gupta/linkly/controller/PublicController.java) → [UserService](src/main/java/com/gupta/linkly/service/UserService.java) and [MessageService](src/main/java/com/gupta/linkly/service/MessageService.java) |
+| `users` | Account details, BCrypt hashes, role, suspension state, and token version |
+| `links` | Destinations, aliases, sort positions, activity flags, and aggregate click counts |
+| `click_analytics` | Event UUID, link ID, click time, device, browser, location, and keyed IP hash |
+| `messages` | Sender label, message body, owning account, and creation time |
+| `system_settings` | Redis and backend self-ping settings |
 
-## From a browser click to an analytics row
+Foreign keys cascade deletions from accounts to their links and messages, and from links to their click rows. The inbox has a composite cursor index. Click history is aggregated in SQL, and older history increases query work. Flyway V1–V7 establish the schema, add row-level security, enforce case-insensitive identities, correct legacy account flags, and index inbox pagination. The PostgreSQL migration connection uses a session advisory lock so V4 can update Flyway’s history table. [Migration files](src/main/resources/db/migration)
 
-1. Bucket4j uses a per-IP token bucket backed by a bounded Caffeine cache. The resolver uses the socket address locally or the configured trust boundary behind a reverse proxy. Linkly's direct public Render deployment can use the `CF-Connecting-IP` header that Render's edge overwrites. Other deployments can configure the number of trusted hops from the right of `X-Forwarded-For`.
-2. An indexed PostgreSQL query joins the short link and its owner so Linkly can enforce link activity and account suspensions. Unknown, inactive, or suspended links go to the frontend error page. Valid links return `302` with `Cache-Control: no-store`. HEAD resolves the destination without recording a click.
-3. Recognizable bots and browser preview clients skip analytics. Other GETs offer a click with a stable UUID to a bounded executor. It appends to Redis with `XADD` or uses the local buffer when the circuit is open, publishing fails, or the executor queue is full.
-4. The worker checks local work every two seconds and polls Redis after a publish signal or a periodic sweep. It reads pending entries before new ones. The fixed consumer name lets a replacement process on the current single-instance deployment see earlier pending events.
-5. When enabled, the worker batches public IPs to GeoJS before opening a database transaction. Lookups are cached and temporary provider failures pause new requests. Click analytics continue with an unknown location where needed.
-6. PostgreSQL inserts events using `ON CONFLICT (id) DO NOTHING`. A CTE increments each link counter for newly inserted events in the same transaction. The worker acknowledges Redis following commit. If the acknowledgement fails, the next delivery leaves the already-committed counter intact.
+Unique visitors are estimates based on a keyed IP hash. Users sharing an IP can be counted together, and changing addresses can count the same visitor more than once. Redis events can contain raw IPs while queued. With location lookup enabled, GeoJS receives public visitor IPs. Changing location settings affects new clicks, and stored events keep their existing location values.
 
-A crash can lose events still queued in memory. Redis retention can trim unprocessed entries during a prolonged backlog. Invalid stream entries are counted and acknowledged. Valid entries that fail database processing are retried. A persistent failing entry needs operator investigation.
+## Configuration and deployment
 
-## Accounts, data, and privacy
-
-- Registration uses BCrypt and enforces the 72-byte password limit. PostgreSQL enforces case-insensitive identity uniqueness. JWTs identify an immutable account UUID and carry the token version. Authenticated requests load the account and check its token version and suspension state. Owner checks and admin roles are enforced on the server.
-- The browser stores the JWT in local storage, which a script executing on the frontend origin could read. Public profiles expose selected display fields and active links. Anonymous messages are sent to the creator's private inbox, which uses `(created_at, id)` as its pagination cursor.
-- The database stores a keyed hash of each visitor IP for approximate visitor counts. Shared IPs and changing IPs affect the estimate. Redis may hold raw IPs in queued events. With location analytics enabled, GeoJS receives public IPs from click events. Existing click rows keep their original location data.
-- Foreign keys cascade from accounts to links and messages, and from links to click rows. Analytics statistics use SQL aggregation, so long histories increase query cost.
-- Flyway V1–V4 establish the schema, add analytics changes, and enable row-level security. V5 adds case-insensitive uniqueness, V6 fixes legacy nullable flags, and V7 indexes inbox pagination. V4 updates Flyway's history table, so the PostgreSQL connection uses a session advisory lock to avoid a migration stall. [Migration files](src/main/resources/db/migration)
-
-## Deployment
-
-| Platform | Configuration |
+| Platform | Setup |
 | --- | --- |
-| Supabase | Use the **Session pooler** JDBC endpoint on port 5432. Configure `DB_URL`, `DB_USERNAME`, and `DB_PASSWORD` on Render. Back up before applying migrations. If upgrading from before V5, check accounts grouped by `lower(username)` and `lower(email)` for duplicates first. |
-| Render | Build the repository root with Docker. Set a strong `JWT_SECRET`, the exact Vercel hostname in `FRONTEND_URL`, and the liveness path to `/actuator/health/liveness`. Keep `IP_HASH_SALT` stable if set. |
-| Upstash | Copy the full URL from **Connect → TCP** into Render's `REDIS_URL`. It uses `rediss://`. Keep the stream and check quota and eviction settings. |
-| Vercel | Set the project root to `frontend` and `VITE_BACKEND_URL` to the public Render URL. Leave `VITE_SHORT_LINK_BASE_URL` unset to send short links directly to Render. |
+| Supabase | Use the **Session pooler** JDBC endpoint on port 5432. Set `DB_URL`, `DB_USERNAME`, and `DB_PASSWORD` on Render. Back up before migrating and check case-only duplicates in usernames and emails when upgrading from a pre-V5 database. |
+| Render | Build the repository root with Docker. Set a strong `JWT_SECRET` and set `FRONTEND_URL` to the Vercel origin. Use `/actuator/health/liveness` for the service health check. Keep `IP_HASH_SALT` stable if set. |
+| Upstash | Copy the connection URL from **Connect → TCP** into `REDIS_URL`. Use the TLS `rediss://` URL and preserve the queue across deploys. |
+| Vercel | Set the root directory to `frontend` and `VITE_BACKEND_URL` to the public Render URL. Leave `VITE_SHORT_LINK_BASE_URL` unset to send short links directly to Render. |
 
-### Enable location analytics on Render
+Location lookup is enabled by default. Set `GEOIP_ENABLED=false` to disable it. On the public Render service, `TRUST_CLOUDFLARE_CLIENT_IP=true` lets Linkly use the visitor address provided by the Render edge. Enable header trust only where that edge overwrites the header. Other deployments can select a trusted position from the right of `X-Forwarded-For` with `TRUSTED_PROXY_COUNT`. Direct local requests use the socket address. [Render edge header guidance](https://render.com/articles/host-pocketbase-on-render) · [GeoJS API](https://www.geojs.io/docs/v1/endpoints/geo/)
 
-Location analytics default to enabled. Remove an existing `GEOIP_ENABLED=false` override or set it to `true`. On Linkly's public Render service, set `TRUST_CLOUDFLARE_CLIENT_IP=true` so the worker receives the visitor address instead of an internal proxy address. Enable this trust setting only where incoming requests must pass through an edge that overwrites the header. On other hosts, configure `TRUSTED_PROXY_COUNT` for that host's trusted hops, or leave it at zero for unproxied local requests. [Render's description of its edge headers](https://render.com/articles/host-pocketbase-on-render) · [GeoJS lookup documentation](https://www.geojs.io/docs/v1/endpoints/geo/)
+### Health and troubleshooting
 
-### Verify a deployment
-
-1. Deploy the Render backend and Vercel frontend. Verify liveness and readiness respond successfully and that the Vercel origin can call the API. Login waits for readiness, which includes PostgreSQL. Render may take a minute or two to start after inactivity.
-2. Open the public profile while signed out. Log in separately, create a disposable short link and open it in a regular browser. Confirm it redirects and the click appears in Analytics. Test from a public network for a location estimate.
-3. In **Admin → System health**, check **Database**, **Click queue**, and **Location analytics**. Location analytics shows **Waiting for traffic** until the provider responds to a batch. For diagnostics, authenticated administrators can inspect component details through `GET /api/admin/system/health`. For an Upstash connection error, recheck the TCP URL and the database's availability in its console.
-4. Before sharing an idle demo, confirm the Supabase project is active. Supabase and Render can idle independently.
-
-## Interview walkthrough
-
-Start with a concrete click: find the destination, return the redirect, enqueue the click, and update the counter. Then explain each of these choices in your own words.
-
-| Question | What to explain |
+| Symptom | Check |
 | --- | --- |
-| What if PostgreSQL commits but Redis misses the acknowledgement? | The same event UUID on replay hits the unique primary key. The transaction increments the link counter only for inserted rows. |
-| Why resolve public links from PostgreSQL? | Each redirect checks the current destination and owner state. The cost is a database round trip. A future cache would need a clear invalidation and staleness policy. |
-| What happens when Redis is down? | PostgreSQL still resolves redirects. The circuit breaker avoids repeated connection attempts. The bounded fallback handles some clicks, with a restart and capacity trade-off. |
-| How do you revoke JWTs? | Change the account's token version. Each protected request checks the token version against the current account. |
-| What would change beyond one backend instance? | Consider shared rate limits, separate consumer identities, pending-entry recovery and load tests before making performance claims. |
-| How would you prove a replay is safe? | Run the PostgreSQL integration test that submits a repeated event UUID. Check both the row and aggregate count. |
+| Sign-in is waiting | Check `/actuator/health/readiness` on Render. The login page polls readiness, including PostgreSQL. A paused Supabase database can keep readiness down after the backend starts. |
+| Click queue is unavailable | Verify Upstash is active and `REDIS_URL` matches the TCP connection URL. Inspect the authenticated `GET /api/admin/system/health` response for component details. |
+| Analytics counts are delayed | Check the stream backlog and whether the local queue is filling. Open a link from a browser to avoid filters for bots or link previews. |
+| Location analytics is waiting for traffic | Send a new click from a regular browser on a public network. The provider status changes after a lookup response. Private addresses and unresolved locations do not produce country estimates. |
+
+## Operational limits
+
+The current deployment runs one application instance. In-memory queues can lose events when full or on restart. Redis stream retention can drop unprocessed work during prolonged backlogs, and a repeatedly failing database batch can stall the consumer until the underlying problem is fixed. Malformed records are acknowledged and counted. Multiple workers would need consumer-specific identities, pending-entry recovery, and a shared rate limit. Current tests exercise transactions and application behavior. Capacity and uptime depend on the hosting environment.

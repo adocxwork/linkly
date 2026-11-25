@@ -41,6 +41,7 @@ class UserServiceTest {
                 .password(encoder.encode("password123")).role(Role.ROLE_USER)
                 .upiId("alice@okbank").enableUpiPayment(false).enablePublicMessaging(true).build();
         when(userRepository.findByUsername("alice")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
         when(userRepository.findByUsernameForUpdate("alice")).thenReturn(Optional.of(user));
     }
 
@@ -66,7 +67,7 @@ class UserServiceTest {
         ChangeSettingsRequest request = new ChangeSettingsRequest();
         request.setNewPassword("brand-new-password");
         request.setCurrentPassword("wrong");
-        assertThatThrownBy(() -> service.updateSettings("alice", request)).isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.updateSettings(user.getId(), request)).isInstanceOf(BadRequestException.class);
     }
 
     @Test
@@ -76,7 +77,7 @@ class UserServiceTest {
         request.setCurrentPassword("password123");
         request.setNewPassword("brand-new-password");
 
-        AuthResponse response = service.updateSettings("alice", request);
+        AuthResponse response = service.updateSettings(user.getId(), request);
 
         assertThat(encoder.matches("brand-new-password", user.getPassword())).isTrue();
         assertThat(JwtUtil.tokenVersion(jwtUtil.parse(oldToken))).isNotEqualTo(user.getTokenVersion());

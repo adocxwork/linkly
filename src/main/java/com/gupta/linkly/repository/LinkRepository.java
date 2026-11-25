@@ -33,7 +33,7 @@ public interface LinkRepository extends JpaRepository<Link, UUID> {
     List<Link> findByUserIdAndActiveTrueOrderBySortOrderAscCreatedAtDesc(UUID userId);
 
     /** Ownership check and fetch in one query: returns empty if the link belongs to someone else. */
-    Optional<Link> findByIdAndUserUsername(UUID id, String username);
+    Optional<Link> findByIdAndUserId(UUID id, UUID userId);
 
     boolean existsByShortUrl(String shortUrl);
 

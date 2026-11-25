@@ -25,5 +25,5 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     List<Message> findOlder(@Param("userId") UUID userId, @Param("before") LocalDateTime before,
                            @Param("beforeId") UUID beforeId, Pageable pageable);
 
-    Optional<Message> findByIdAndUserUsername(UUID id, String username);
+    Optional<Message> findByIdAndUserId(UUID id, UUID userId);
 }

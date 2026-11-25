@@ -185,6 +185,37 @@ class LinklyApplicationTests {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    void redirectsUnicodeUrlsAndKeepsLinkAndInboxAccessScopedToTheOwner() throws Exception {
+        String ownerToken = register("owner");
+        String otherToken = register("visitor");
+        String linkId = json(mvc.perform(post("/api/links").header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"title":"Unicode","originalUrl":"https://example.com/café/📚?topic=résumé","customAlias":"unicode-docs"}
+                                """))
+                .andExpect(status().isCreated())).path("id").asString();
+
+        mvc.perform(head("/r/unicode-docs")).andExpect(status().isFound())
+                .andExpect(header().string("Location", "https://example.com/caf%C3%A9/%F0%9F%93%9A?topic=r%C3%A9sum%C3%A9"));
+        mvc.perform(get("/api/links/" + linkId + "/analytics").header("Authorization", "Bearer " + otherToken))
+                .andExpect(status().isNotFound());
+        mvc.perform(delete("/api/links/" + linkId).header("Authorization", "Bearer " + otherToken))
+                .andExpect(status().isNotFound());
+
+        mvc.perform(put("/api/users/settings").header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"enablePublicMessaging\":true}"))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/public/u/owner/messages").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"Hello Linkly\"}"))
+                .andExpect(status().isCreated());
+        String messageId = json(mvc.perform(get("/api/messages").header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())).get(0).path("id").asString();
+        mvc.perform(delete("/api/messages/" + messageId).header("Authorization", "Bearer " + otherToken))
+                .andExpect(status().isNotFound());
+        mvc.perform(delete("/api/messages/" + messageId).header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isNoContent());
+    }
+
     private String register(String username) throws Exception {
         return json(mvc.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON).content("""
                         {"name":"Example","username":"%s","email":"%s@example.com","password":"password123"}
