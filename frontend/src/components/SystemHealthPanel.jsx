@@ -106,7 +106,7 @@ const SystemHealthPanel = ({ onError }) => {
           <div>
             <h4 style={{ margin: 0 }}>Use Redis</h4>
             <p className="text-secondary" style={{ fontSize: '0.85rem', margin: 0 }}>
-              Off = no caching and clicks are queued in memory. Turn off if Upstash is down or out of quota.
+              When Redis is disabled or unreachable, clicks are queued in this server’s memory.
             </p>
           </div>
           <Toggle checked={!!settings?.redisEnabled} disabled={!settings || saving}

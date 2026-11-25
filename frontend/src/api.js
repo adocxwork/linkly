@@ -9,11 +9,11 @@ const api = axios.create({
   timeout: 60000, // Render free tier can take ~50s to wake up
 });
 
-// Attach the JWT (stored after login/register) to every request.
+// Attach the JWT only to requests that can use authentication.
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token && !config.url.startsWith('/auth/') && !config.url.startsWith('/public/')) {
-    config.headers.Authorization = `Bearer ${token}`;
+  if (!config.url?.startsWith('/auth/') && !config.url?.startsWith('/public/')) {
+    const token = localStorage.getItem('token');
+    if (token) config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
@@ -35,13 +35,13 @@ api.interceptors.response.use(
 
 /** Human-readable message for any API error. */
 export const errorMessage = (err, fallback = 'Something went wrong') => {
-  if (err.response?.status === 429) {
+  if (err?.response?.status === 429) {
     return err.response.data?.message || 'Too many requests. Please wait a moment.';
   }
-  if (err.response?.data?.message) {
+  if (err?.response?.data?.message) {
     return err.response.data.message;
   }
-  if (err.code === 'ECONNABORTED' || !err.response) {
+  if (err && (err.code === 'ECONNABORTED' || !err.response) && axios.isAxiosError(err)) {
     return 'Server is not responding (it may be waking up). Please try again in a few seconds.';
   }
   return fallback;

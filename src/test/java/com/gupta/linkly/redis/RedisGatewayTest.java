@@ -3,6 +3,7 @@ package com.gupta.linkly.redis;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.time.Clock;
@@ -12,7 +13,9 @@ import java.time.ZoneOffset;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class RedisGatewayTest {
 
@@ -75,6 +78,25 @@ class RedisGatewayTest {
 
         gateway.setEnabled(true);
         assertThat(gateway.isAvailable()).isTrue(); // breaker reset, no need to wait for cooldown
+    }
+
+    @Test
+    void successfulHealthPingDoesNotOverrideAStreamFailure() {
+        gateway.run("XGROUP CREATE", t -> { throw new RedisConnectionFailureException("down"); });
+        when(template.execute(any(RedisCallback.class))).thenReturn("PONG");
+
+        assertThat(gateway.ping().ok()).isTrue();
+        assertThat(gateway.isCircuitOpen()).isTrue();
+        assertThat(gateway.getLastError()).startsWith("XGROUP CREATE");
+    }
+
+    @Test
+    void redactsConnectionUrlsFromFailures() {
+        gateway.run("PING", t -> {
+            throw new RedisConnectionFailureException("Error connecting to rediss://default:secret@example.test");
+        });
+
+        assertThat(gateway.getLastError()).contains("redacted").doesNotContain("secret");
     }
 
     static final class MutableClock extends Clock {

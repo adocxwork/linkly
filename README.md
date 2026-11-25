@@ -1,101 +1,85 @@
-# Linkly
+<div align="center">
+  <img src="frontend/public/favicon.svg" width="52" height="52" alt="">
+  <h1>Linkly</h1>
+  <p><strong>One public page for your links. Click analytics behind every short URL.</strong></p>
+  <p>
+    <a href="https://linkly-plum.vercel.app/p/adocxwork">Public profile</a> ·
+    <a href="https://linkly-plum.vercel.app/register">Try Linkly</a> ·
+    <a href="https://linkly-amwf.onrender.com/swagger-ui/index.html">Explore the API</a>
+  </p>
+  <a href="https://github.com/adocxwork/linkly/actions/workflows/ci.yml"><img src="https://github.com/adocxwork/linkly/actions/workflows/ci.yml/badge.svg" alt="CI build and tests"></a>
+</div>
 
-[![CI](https://github.com/adocxwork/linkly/actions/workflows/ci.yml/badge.svg)](https://github.com/adocxwork/linkly/actions/workflows/ci.yml)
+<br>
 
-A link-in-bio and URL-shortener platform. Creators get a public page (`/p/{username}`) with their
-links, an optional UPI payment QR code and an anonymous message box. Short links
-(`/r/{code}`) record device, browser, estimated unique visitors and a 30-day trend. Country enrichment is optional.
+<p align="center">
+  <img src="docs/images/profile-demo.png" width="405" alt="Linkly public profile with three links and an anonymous message form">
+  <img src="docs/images/analytics-demo.png" width="405" alt="Linkly analytics with a 30-day click chart and visitor breakdowns">
+</p>
+<p align="center"><em>Public profile and per-link analytics with sample data</em></p>
 
-**Hosted demo:** [linkly-plum.vercel.app](https://linkly-plum.vercel.app) ·
-**API docs:** [Swagger UI](https://linkly-amwf.onrender.com/swagger-ui/index.html)
+Linkly combines a link-in-bio page, a URL shortener and an analytics dashboard. Creators can reorder links, receive anonymous messages and optionally show a UPI QR code. The dashboard shows click trends, device and browser breakdowns, and estimated unique visitors.
 
-## Tech stack
+**Stack** · Java 21 · Spring Boot · PostgreSQL · Redis Streams · React · Flyway · Docker
 
-| Layer | Technology | Hosted on |
-|---|---|---|
-| Backend | Java 21, Spring Boot 4.1 (Web MVC, Security, Data JPA), Flyway, Bucket4j, JJWT | Render (Docker) |
-| Database | PostgreSQL | Supabase |
-| Click queue | Redis Streams, optional | Upstash |
-| Frontend | React 19, Vite, Recharts | Vercel |
-| Tests / CI | JUnit 5, Mockito, Testcontainers, GitHub Actions | |
-
-## Architecture
+## What happens when someone clicks?
 
 ```mermaid
 flowchart LR
-    V([Visitor]) -->|GET /r/code| API
-    C([Creator]) --> FE[React app on Vercel] -->|REST + JWT| API[Spring Boot API on Render]
-    API -->|queries| PG[(PostgreSQL)]
-    API -->|bounded handoff| P[Click publisher] -->|XADD| S[[Redis Stream]]
-    S -->|XREADGROUP batches| W[Click worker]
-    P -.->|Redis unavailable| Q[[Local buffer]] -.-> W
-    W -.->|optional Geo-IP| G[geojs.io]
-    W -->|1 transaction per batch| PG
+    Browser([Visitor]) -->|"GET /r/{code}"| API[Spring Boot]
+    API -->|Indexed lookup| PG[(PostgreSQL)]
+    API -->|302 redirect| Target([Destination])
+    API -.->|Enqueue click| Publisher[Background publisher]
+    Publisher -->|XADD| Stream[(Redis Stream)]
+    Publisher -.->|Redis unavailable| Buffer[Bounded local queue]
+    Stream -->|Consumer group| Worker[Analytics worker]
+    Buffer --> Worker
+    Worker -->|Insert events and update counts| PG
+    Worker -.->|XACK after commit| Stream
 ```
 
-### Engineering decisions
+| Design decision | What it buys |
+| --- | --- |
+| Resolve redirects from PostgreSQL | A single indexed lookup checks the link and its owner. Deactivation and suspension take effect without relying on cache invalidation. |
+| Process clicks off the request thread | The visitor gets the redirect while the worker handles persistence in batches. |
+| Count an event once across retries | The event UUID identifies the row, and only first-time inserts increment the aggregate counter in the same transaction. |
+| Keep redirects working during Redis outages | The breaker limits failed calls and analytics uses a bounded in-memory queue while Redis recovers. |
+| Validate sessions against account state | JWTs carry the account UUID and token version so global logout, password changes and suspension revoke older tokens. |
 
-1. **One indexed redirect lookup.** PostgreSQL verifies that the link and owner can be served. The redirect returns `302` with `Cache-Control: no-store` and hands off click processing in the background.
-2. **Idempotent analytics writes.** The event UUID is the row’s primary key. PostgreSQL inserts a batch and increments counters for newly inserted rows in one transaction. The worker acknowledges Redis only after the database commit.
-3. **Bounded fallback when Redis is unavailable.** A circuit breaker limits repeat calls to a failing Redis, and clicks use a bounded local queue while it recovers. The worker polls on a publish signal and on a periodic sweep to limit idle commands.
-4. **Revocable bearer tokens.** JWTs use the account UUID and token version. Password changes, suspension and logging out everywhere revoke earlier tokens.
-5. **Migrations and health checks.** Flyway manages the schema. Login checks database readiness and shows a cold-start message while the backend wakes.
+The admin dashboard shows PostgreSQL readiness, Redis connectivity, stream backlog and dropped click counts. The demo runs on **Vercel** and **Render** with **Supabase** and **Upstash**. The first request after Render idles can take a minute or two.
 
-See the [interview guide](docs/ARCHITECTURE.md) and [deployment guide](docs/DEPLOYMENT.md).
+## Start here in the code
 
-## Admin features
+| If you’re curious about… | Read this |
+| --- | --- |
+| URL validation, ownership and redirects | [LinkService.java](src/main/java/com/gupta/linkly/service/LinkService.java) |
+| Consumer groups, acknowledgements and retries | [ClickStreamWorker.java](src/main/java/com/gupta/linkly/analytics/ClickStreamWorker.java) |
+| Idempotent SQL and transactional counters | [ClickBatchWriter.java](src/main/java/com/gupta/linkly/analytics/ClickBatchWriter.java) |
+| Token validation and revocation | [JwtAuthenticationFilter.java](src/main/java/com/gupta/linkly/security/JwtAuthenticationFilter.java) |
+| Schema and database constraints | [Flyway migrations](src/main/resources/db/migration) |
 
-The admin dashboard shows **live system health**, refreshed every 30 s:
-- PostgreSQL: latency and connection pool
-- Redis: ping latency and circuit breaker state
-- Click pipeline: mode, stream length and pending count, processed, dropped and malformed record counts
-- Geo-IP API, self-ping and JVM memory
+## Run it locally
 
-It also has **runtime switches** for the Render self-ping and for Redis. Both are stored in the
-database, so they survive restarts. Admins can also suspend or delete users.
-
-## Running locally
-
-Prerequisites: Java 21, Node 22, PostgreSQL. Redis is optional.
+Install Java 21, Node 22.13+ and PostgreSQL. Redis is optional.
 
 ```bash
-cp .env.example .env      # set JWT_SECRET and DB credentials
-npm --prefix frontend ci
+cp .env.example .env
+# Set DB credentials and a JWT_SECRET of at least 32 bytes in .env
 createdb linkly
-./run.sh                  # backend :8080, frontend :5173
+npm --prefix frontend ci
+./run.sh
 ```
 
-Flyway creates the schema on first start. Set `ADMIN_PASSWORD` in `.env` to get an `admin` account.
-
-## Tests
+Open [the local app](http://localhost:5173) or [the local Swagger UI](http://localhost:8080/swagger-ui/index.html). Flyway creates the tables on startup. Set `ADMIN_PASSWORD` before launch if you want an admin account.
 
 ```bash
-./mvnw test
+./mvnw verify
+npm --prefix frontend run lint
+npm --prefix frontend run build
 ```
 
-- **Unit tests:** circuit breaker, click publisher fallback, stream acknowledgement, retry and legacy record handling,
-  client-IP resolution, User-Agent parsing, and the link/user services.
-- **Integration tests:** run against PostgreSQL with Redis disabled. Cover migrations, the register-to-redirect flow, inbox pagination, replay-safe counters, account recreation and admin health. Use Docker or set `TEST_DB_URL` (and credentials if needed) to a disposable, empty database.
+The PostgreSQL integration tests use Testcontainers or a disposable database supplied via `TEST_DB_URL`. They cover schema migration, signup, redirects, inbox pagination and replay-safe click counts.
 
-CI (GitHub Actions) runs the backend tests and the frontend lint and build on every push.
+**Scope:** Linkly runs as a single backend instance. Queued clicks can be lost during a restart or a prolonged backlog. IP-based visitor estimates have limits.
 
-## API overview
-
-| Method | Path | Auth |
-|---|---|---|
-| POST | `/api/auth/register`, `/api/auth/login` | public (10/min per IP) |
-| GET | `/api/public/u/{username}` | public (60/min per IP) |
-| POST | `/api/public/u/{username}/messages` | public (5/min per IP) |
-| GET | `/r/{code}` | public (120/min per IP) |
-| CRUD | `/api/links`, `/api/links/{id}/analytics`, `/api/links/reorder` | user |
-| GET/PUT | `/api/users/profile`, `/api/users/settings`; POST `/api/users/me/revoke-sessions` | user |
-| GET/DELETE | `/api/messages` | user |
-| GET/PUT | `/api/admin/users…`, `/api/admin/system/health`, `/api/admin/system/settings` | admin |
-| GET | `/actuator/health` (`/liveness`, `/readiness`) | public, no details |
-
-## Known limitations / next steps
-
-- The app is designed for one instance. Buffered clicks can be lost on restart or under prolonged outages. The Redis path still needs a live provider integration test.
-- Redirect latency depends on PostgreSQL and network distance. Analytics queries scan historical rows, and IP-based unique visitors are an estimate.
-- Public registration and anonymous messaging need moderation and stronger abuse controls before broad exposure. Email verification and password recovery are absent.
-- The free Render service can sleep. A short link that triggers a cold start depends on Render’s response, while the login page can display progress and retry.
+[Architecture and trade-offs](docs/ARCHITECTURE.md) · [Deploy and troubleshoot](docs/DEPLOYMENT.md)

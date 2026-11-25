@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { readStoredUser } from '../session';
 import api, { errorMessage, saveSession } from '../api';
 
 const Settings = () => {
-  const cachedUser = JSON.parse(localStorage.getItem('user') || '{}');
+  const cachedUser = readStoredUser() || {};
   const [user, setUser] = useState(cachedUser);
   const [form, setForm] = useState({
     name: cachedUser.name || '',

@@ -23,7 +23,6 @@ import java.util.function.Function;
  *   <li><b>configured</b>: REDIS_URL is set. If not, the app runs without Redis entirely.</li>
  *   <li><b>enabled</b>: the admin switch in the dashboard (persisted in system_settings).</li>
  *   <li><b>circuit breaker</b>: after a failure we stop calling Redis for a cool-down period.
- *       Without this, every request would wait for the 2s Redis timeout while Redis is down.
  *       After the cool-down the next call is a trial: success closes the circuit, failure
  *       re-opens it.</li>
  * </ol>
@@ -34,6 +33,7 @@ public class RedisGateway {
 
     private final StringRedisTemplate template;
     private final boolean configured;
+    private final String configurationError;
     private final Duration cooldown;
     private final Clock clock;
 
@@ -46,18 +46,26 @@ public class RedisGateway {
 
     @Autowired
     public RedisGateway(StringRedisTemplate template,
-                        @Value("${app.redis.url:}") String redisUrl,
+                        RedisEndpoint endpoint,
                         @Value("${app.redis.circuit-cooldown:30s}") Duration cooldown) {
-        this(template, redisUrl != null && !redisUrl.isBlank(), cooldown, Clock.systemUTC());
+        this(template, endpoint.configured(), endpoint.error(), cooldown, Clock.systemUTC());
     }
 
     /** Visible for tests: lets them control "configured" and the clock. */
     public RedisGateway(StringRedisTemplate template, boolean configured, Duration cooldown, Clock clock) {
+        this(template, configured, null, cooldown, clock);
+    }
+
+    private RedisGateway(StringRedisTemplate template, boolean configured, String configurationError,
+                         Duration cooldown, Clock clock) {
         this.template = template;
+        this.configurationError = configurationError;
         this.configured = configured;
         this.cooldown = cooldown;
         this.clock = clock;
-        if (!configured) {
+        if (configurationError != null) {
+            log.warn("Redis configuration invalid: {} Clicks use the in-memory queue.", configurationError);
+        } else if (!configured) {
             log.warn("REDIS_URL is not set: running without Redis (clicks processed in-memory).");
         }
     }
@@ -91,7 +99,7 @@ public class RedisGateway {
 
     /** True when callers should try Redis right now. */
     public boolean isAvailable() {
-        return configured && enabled && !isCircuitOpen();
+        return configured && configurationError == null && enabled && !isCircuitOpen();
     }
 
     public long getConsecutiveFailures() {
@@ -160,12 +168,17 @@ public class RedisGateway {
         if (!enabled) {
             return new PingResult(false, null, "Disabled by admin");
         }
+        if (configurationError != null) {
+            return new PingResult(false, null, configurationError);
+        }
         long start = System.nanoTime();
         try {
             String reply = template.execute((org.springframework.data.redis.core.RedisCallback<String>)
                     connection -> connection.ping());
             long latency = Duration.ofNanos(System.nanoTime() - start).toMillis();
-            onSuccess();
+            if (!"PONG".equalsIgnoreCase(reply)) {
+                throw new IllegalStateException("Redis did not return PONG");
+            }
             return new PingResult(true, latency, reply);
         } catch (RuntimeException e) {
             onFailure("PING", e);
@@ -188,11 +201,12 @@ public class RedisGateway {
 
     private void onFailure(String operation, RuntimeException e) {
         long failures = consecutiveFailures.incrementAndGet();
-        lastError = operation + ": " + rootMessage(e);
+        String explanation = rootMessage(e);
+        lastError = operation + ": " + explanation;
         lastErrorAt = clock.instant();
         circuitOpenUntil = clock.instant().plus(cooldown);
         if (failures == 1) {
-            log.warn("Redis {} failed, skipping Redis for {}s: {}", operation, cooldown.toSeconds(), rootMessage(e));
+            log.warn("Redis {} failed, skipping Redis for {}s: {}", operation, cooldown.toSeconds(), explanation);
         } else {
             log.debug("Redis {} failed again ({} consecutive failures)", operation, failures);
         }
@@ -204,6 +218,9 @@ public class RedisGateway {
             t = t.getCause();
         }
         String msg = t.getMessage();
+        if (msg != null) {
+            msg = msg.replaceAll("(?i)rediss?://[^\\s)]+", "[Redis URL redacted]");
+        }
         return t.getClass().getSimpleName() + (msg != null ? ": " + msg : "");
     }
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import QRCode from 'react-qr-code';
@@ -8,6 +8,7 @@ const Profile = ({ username }) => {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [attempt, setAttempt] = useState(0);
   const [sending, setSending] = useState(false);
   const sendingMessage = useRef(false);
   
@@ -19,7 +20,12 @@ const Profile = ({ username }) => {
   useEffect(() => {
     const controller = new AbortController();
     api.get(`/public/u/${encodeURIComponent(username)}`, { signal: controller.signal })
-      .then(({ data }) => setProfile(data))
+      .then(({ data }) => {
+        if (typeof data?.username !== 'string' || typeof data.name !== 'string' || !Array.isArray(data.links)) {
+          throw new Error('Unexpected profile response');
+        }
+        if (!controller.signal.aborted) setProfile(data);
+      })
       .catch((err) => {
         if (!controller.signal.aborted) setError(err);
       })
@@ -27,7 +33,7 @@ const Profile = ({ username }) => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [username]);
+  }, [username, attempt]);
 
   const showError = (msg) => {
     setErrorMsg(msg);
@@ -40,10 +46,11 @@ const Profile = ({ username }) => {
     sendingMessage.current = true;
     setSending(true);
     try {
-      await api.post(`/public/u/${encodeURIComponent(username)}/messages`, {
+      const response = await api.post(`/public/u/${encodeURIComponent(username)}/messages`, {
         senderName: messageName || 'Anonymous',
         content: messageContent
       });
+      if (response.status !== 201) throw new Error('Unexpected message response');
       setMessageSuccess(true);
       setMessageName('');
       setMessageContent('');
@@ -58,14 +65,15 @@ const Profile = ({ username }) => {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center" style={{ minHeight: '60vh' }}>
-        <div style={{
-          width: '50px', height: '50px', border: '4px solid rgba(0,113,227,0.2)', 
+      <div role="status" className="flex justify-center items-center gap-4" style={{ minHeight: '60vh' }}>
+        <div aria-hidden="true" style={{
+          width: '32px', height: '32px', border: '4px solid rgba(0,113,227,0.2)',
           borderTopColor: 'var(--accent-color)', borderRadius: '50%',
           animation: 'spin 1s linear infinite'
         }}>
           <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
+        <span className="text-secondary">Loading profile. The server may be waking up.</span>
       </div>
     );
   }
@@ -75,8 +83,16 @@ const Profile = ({ username }) => {
     return (
       <div className="card glass text-center" style={{ maxWidth: '400px', margin: '4rem auto' }}>
         <h2 className="mb-4">{missing ? 'User not found' : 'Profile unavailable'}</h2>
-        <p className="text-secondary mb-6">{missing ? 'This profile may have been removed or suspended.' : errorMessage(error, 'Please try reloading the page.')}</p>
-        <Link to="/" className="btn btn-primary">Go Home</Link>
+        <p className="text-secondary mb-6">{missing ? 'This profile may have been removed or suspended.' : errorMessage(error, 'Please try loading the profile again.')}</p>
+        {missing ? (
+          <Link to="/" className="btn btn-primary">Go Home</Link>
+        ) : (
+          <button type="button" className="btn btn-primary" onClick={() => {
+            setError(null);
+            setLoading(true);
+            setAttempt((value) => value + 1);
+          }}>Try again</button>
+        )}
       </div>
     );
   }

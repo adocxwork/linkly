@@ -1,19 +1,17 @@
 package com.gupta.linkly.config;
 
+import com.gupta.linkly.redis.RedisEndpoint;
 import io.lettuce.core.ClientOptions;
 import io.lettuce.core.SocketOptions;
 import io.lettuce.core.TimeoutOptions;
+import io.lettuce.core.protocol.ProtocolVersion;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
-import java.net.URI;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 /**
@@ -31,8 +29,6 @@ import java.time.Duration;
 @Configuration
 public class RedisConfig {
 
-    private static final Duration TIMEOUT = Duration.ofSeconds(2);
-
     @Bean
     public ThreadPoolTaskExecutor clickPublishExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
@@ -46,48 +42,23 @@ public class RedisConfig {
     }
 
     @Bean
-    public LettuceConnectionFactory redisConnectionFactory(@Value("${app.redis.url:}") String url) {
-        RedisStandaloneConfiguration server = new RedisStandaloneConfiguration();
-        boolean ssl = false;
-        if (url != null && !url.isBlank()) {
-            URI uri = URI.create(url.trim());
-            ssl = "rediss".equalsIgnoreCase(uri.getScheme());
-            server.setHostName(uri.getHost());
-            server.setPort(uri.getPort() > 0 ? uri.getPort() : 6379);
-            if (uri.getRawUserInfo() != null) {
-                String[] parts = uri.getRawUserInfo().split(":", 2);
-                if (parts.length == 2) {
-                    if (!parts[0].isEmpty()) {
-                        server.setUsername(decode(parts[0]));
-                    }
-                    server.setPassword(decode(parts[1]));
-                } else {
-                    server.setPassword(decode(parts[0]));
-                }
-            }
-            String path = uri.getPath();
-            if (path != null && path.length() > 1) {
-                server.setDatabase(Integer.parseInt(path.substring(1)));
-            }
-        }
-
+    public LettuceConnectionFactory redisConnectionFactory(RedisEndpoint endpoint,
+                                                           @Value("${app.redis.timeout:5s}") Duration timeout) {
         ClientOptions clientOptions = ClientOptions.builder()
+                // Start connections with AUTH/PING using the Redis-compatible RESP2 handshake.
+                .protocolVersion(ProtocolVersion.RESP2)
                 .autoReconnect(true)
                 .disconnectedBehavior(ClientOptions.DisconnectedBehavior.REJECT_COMMANDS)
-                .socketOptions(SocketOptions.builder().connectTimeout(TIMEOUT).build())
-                .timeoutOptions(TimeoutOptions.enabled(TIMEOUT))
+                .socketOptions(SocketOptions.builder().connectTimeout(timeout).build())
+                .timeoutOptions(TimeoutOptions.enabled(timeout))
                 .build();
         LettuceClientConfiguration.LettuceClientConfigurationBuilder client = LettuceClientConfiguration.builder()
-                .commandTimeout(TIMEOUT)
+                .commandTimeout(timeout)
                 .shutdownTimeout(Duration.ofMillis(200))
                 .clientOptions(clientOptions);
-        if (ssl) {
+        if (endpoint.tls()) {
             client.useSsl();
         }
-        return new LettuceConnectionFactory(server, client.build());
-    }
-
-    private static String decode(String value) {
-        return URLDecoder.decode(value, StandardCharsets.UTF_8);
+        return new LettuceConnectionFactory(endpoint.server(), client.build());
     }
 }

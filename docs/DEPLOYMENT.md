@@ -49,3 +49,9 @@ Set the project root to `frontend` and `VITE_BACKEND_URL` to `https://linkly-amw
 3. Sign in with a test account. Create a link, open it with a browser, verify the redirect and check the click count. Disable the link and verify the next visit shows the link error page.
 4. Verify the admin dashboard reports Redis and PostgreSQL correctly, the resolved IP matches the client and the pending count drains. Toggle Redis for a test of the fallback, then restore the desired setting.
 5. Check the Supabase dashboard before sharing the demo after a long idle period. Free projects can pause independently of Render. [Supabase project pausing](https://supabase.com/docs/guides/platform/free-project-pausing)
+
+## If Redis shows DOWN
+
+1. In Upstash, open the database and choose **Connect → TCP**. Copy the full `rediss://default:…@…upstash.io:6379` URL. In Render, open the Linkly web service and paste it into the secret environment variable `REDIS_URL` without quotes. Save and deploy. [Upstash Redis with Render](https://upstash.com/docs/redis/quickstarts/render)
+2. In Linkly **Admin → System health**, expand **Redis (Upstash)**. Keep **Use Redis** enabled. A successful connectivity check shows **UP** once the stream worker has recovered. Open one of your short links in a browser and check that the **publishedToStream** counter increases and the click appears in Analytics.
+3. If Redis still reports **Connection closed prematurely**, check that the Upstash database is active and the TCP port and credentials match its Connect tab. An Upstash TLS endpoint closes plaintext connections. If the URL is already correct, share the sanitized admin error and the corresponding Render log line for diagnosis. Keep the full URL and token private. [Upstash connection reset troubleshooting](https://upstash.com/docs/redis/troubleshooting/econn_reset)

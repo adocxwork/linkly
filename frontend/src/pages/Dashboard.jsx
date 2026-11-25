@@ -5,6 +5,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { readStoredUser } from '../session';
 import api, { errorMessage, shortLinkUrl } from '../api';
 // Charts library is only downloaded when someone opens analytics.
 const AnalyticsModal = lazy(() => import('../components/AnalyticsModal'));
@@ -21,7 +22,7 @@ const Dashboard = () => {
   const [deleteModal, setDeleteModal] = useState({ show: false, linkId: null });
   const [analyticsModal, setAnalyticsModal] = useState({ show: false, link: null });
   const [errorMsg, setErrorMsg] = useState('');
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const user = readStoredUser() || {};
 
   const { register, handleSubmit, formState: { errors }, reset } = useForm({
     resolver: zodResolver(linkSchema),

@@ -93,7 +93,7 @@ public class SystemHealthService {
         details.put("enabledByAdmin", redis.isEnabled());
         if (!redis.isConfigured() || !redis.isEnabled()) {
             details.put("note", !redis.isConfigured() ? "REDIS_URL not set" : "Turned off in admin settings");
-            details.put("effect", "No caching; clicks use the in-memory queue");
+            details.put("effect", "Clicks use the in-memory queue");
             return new ComponentHealth(Status.DISABLED, null, details);
         }
         RedisGateway.PingResult ping = redis.ping();
@@ -104,8 +104,12 @@ public class SystemHealthService {
         details.put("lastErrorAt", redis.getLastErrorAt());
         if (!ping.ok()) {
             details.put("error", ping.message());
-            details.put("effect", "Falling back to PostgreSQL and the in-memory click queue");
+            details.put("effect", "Clicks use the in-memory queue");
             return new ComponentHealth(Status.DOWN, null, details);
+        }
+        if (redis.isCircuitOpen()) {
+            details.put("effect", "Ping succeeded. Clicks use the in-memory queue until the Redis retry.");
+            return new ComponentHealth(Status.DEGRADED, ping.latencyMs(), details);
         }
         return new ComponentHealth(Status.UP, ping.latencyMs(), details);
     }

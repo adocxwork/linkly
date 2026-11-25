@@ -1,3 +1,4 @@
+import { readStoredUser } from './session';
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import Navbar from './components/Navbar';
@@ -14,7 +15,7 @@ const Inbox = lazy(() => import('./pages/Inbox'));
 const ErrorPage = lazy(() => import('./pages/ErrorPage'));
 
 const ProtectedRoute = ({ children, adminOnly = false }) => {
-  const user = JSON.parse(localStorage.getItem('user') || 'null');
+  const user = readStoredUser();
   const token = localStorage.getItem('token');
 
   if (!user || !token) {

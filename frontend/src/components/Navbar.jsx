@@ -1,3 +1,4 @@
+import { readStoredUser } from '../session';
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Link2, LogOut, Settings, LayoutDashboard, Shield, Menu, X, User, Mail } from 'lucide-react';
@@ -5,7 +6,7 @@ import { Link2, LogOut, Settings, LayoutDashboard, Shield, Menu, X, User, Mail }
 const Navbar = () => {
   const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const user = JSON.parse(localStorage.getItem('user') || 'null');
+  const user = readStoredUser();
 
   const handleLogout = () => {
     localStorage.removeItem('user');
